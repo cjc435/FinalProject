@@ -96,6 +96,8 @@ char color = WHITE ;
 
 // Renderer
 
+uint8_t FOV = 90; // Convert to binary angular measurement (BAM)
+float AspectRatio = VGA_WIDTH/VGA_HEIGHT; // 4:3 aspect ratio
 
 // Functions // 
 
@@ -112,18 +114,25 @@ void WorldTranslation(player_t *player, wall_t *wall) {
 
 }
 
-void RenderWall(wall_t *wall) {
+void RenderWall(wall_t *wall, uint16_t FloorHeight, uint16_t CeilHeight) {
   const uint16_t ScreenMidWidth = VGA_WIDTH/2;
   const uint16_t ScreenMidHeight = VGA_HEIGHT/2;
 
   // Convert 2D coordinates to player's projection view
   int16_t x0 = wall->x0.x / wall->x0.y;
   int16_t x1 = wall->x1.x / wall->x1.y;
+  int16_t y0 = (FloorHeight / wall->x0.y);
+  int16_t y1 = (FloorHeight / wall->x1.y);
 
   // Convert new 3D coordinates to 2D screen coordinates
+  // "Wall" coordinates are from -2^15 -> 2^15-1 in x and y (–32,768 to 32,767)
+  // Screen goes from 0 -> 640 in x and 0 -> 480 in y
+  // Steps:
+  // Convert wall coordinates from (–32,768 to 32,767) to (0 to 65,535) (both x and y)
+  // Convert divide by 65,535 
 
-  drawPixel(x0, 50, WHITE);
-  drawPixel(x1, 50, WHITE);
+  drawPixel(x0, y0, WHITE);
+  drawPixel(x1, y1, WHITE);
 }
 
 // ==================================================
@@ -234,7 +243,7 @@ static PT_THREAD (protothread_render(struct pt *pt))
       // Translate the wall around the player. Returns wall transformations
       WorldTranslation(&player, &wall);
       
-      RenderWall(&wall);
+      RenderWall(&wall, 15, 20);
 
 
      // NEVER exit while
