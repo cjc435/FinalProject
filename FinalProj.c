@@ -53,16 +53,11 @@ typedef signed int fix15 ;
 #define divfix(a,b) (fix15)(div_s64s64( (((signed long long)(a)) << 15), ((signed long long)(b))))
 
 
-typedef struct {int x; int y;} vector2d_t;
+typedef struct {int16_t x; int16_t y;} vector2d_t;
 typedef struct {vector2d_t x0; vector2d_t x1;} wall_t;
-typedef struct {vector2d_t location; float angle;} player_t;
+typedef struct {vector2d_t location; uint8_t angle;} player_t;
 // typedef struct {int NumWalls; int floor; int ceil; wall_t wall;} sector_t;
 
-// Wall detection
-#define hitBottom(b) (b>int2fix15(380))
-#define hitTop(b) (b<int2fix15(100))
-#define hitLeft(a) (a<int2fix15(100))
-#define hitRight(a) (a>int2fix15(540))
 
 // LED
 #define LED_PIN 25
@@ -92,13 +87,41 @@ enum DebouncerState {
   MaybeNotPressed
 };
 
-// Color
+// VGA
 char color = WHITE ;
+
+// Screen width/height
+#define VGA_WIDTH 640
+#define VGA_HEIGHT 480
 
 // Renderer
 
 
+// Functions // 
 
+void WorldTranslation(player_t *player, wall_t *wall) {
+
+  wall->x0.x = wall->x0.x - player->location.x;
+  wall->x0.y = wall->x0.y - player->location.y;  
+  wall->x1.x = wall->x1.x - player->location.x;
+  wall->x1.y = wall->x1.y - player->location.y;
+
+  // angle manipulations here
+
+  // clipping here
+
+}
+
+void RenderWall(wall_t *wall) {
+  int16_t x0 = wall->x0.x / wall->x0.y;
+  int16_t x1 = wall->x1.x / wall->x1.y;
+
+  const uint16_t ScreenMidWidth = VGA_WIDTH/2;
+  const uint16_t ScreenMidHeight = VGA_HEIGHT/2;
+
+  drawPixel();
+
+}
 
 // ==================================================
 // === Keypad thread 
@@ -195,7 +218,7 @@ static PT_THREAD (protothread_render(struct pt *pt))
     player.angle = 0;
     
     wall_t wall;
-    wall.x0.x = 10;
+    wall.x0.x = -10;
     wall.x0.y = 20;
     wall.x1.x = 21;
     wall.x1.y = 26;
@@ -205,8 +228,11 @@ static PT_THREAD (protothread_render(struct pt *pt))
       PT_YIELD_UNTIL(pt, draw_start_signal()) ;
       // Clear the buffer
       clearLowFrame(0, BLACK);
-      // Draw
-      drawLine(200, 300, 400, 500, WHITE) ;
+      // Translate the wall around the player. Returns wall transformations
+      WorldTranslation(&player, &wall);
+      
+      RenderWall(&wall);
+
 
      // NEVER exit while
     } // END WHILE(1)
