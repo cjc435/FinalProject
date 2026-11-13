@@ -94,10 +94,49 @@ char color = WHITE ;
 #define VGA_WIDTH 640
 #define VGA_HEIGHT 480
 
+
 // Renderer
 
-uint8_t FOV = 90; // Convert to binary angular measurement (BAM)
-float AspectRatio = VGA_WIDTH/VGA_HEIGHT; // 4:3 aspect ratio
+
+
+// Binary Angular Measurement (BAM)
+#define BAM_SIZE 256
+#define DEG_SIZE 360
+#define PI 3.14159265358979323846f
+
+uint8_t degree_to_bam[DEG_SIZE];
+
+float sin_lut[BAM_SIZE];
+float cos_lut[BAM_SIZE];
+
+void init_lookup_tables(void) {
+
+    // Float degrees -> uint8_t BAM
+    for (int i = 0; i < DEG_SIZE; i++) {
+        degree_to_bam[i] = (uint8_t)(i * 256.0f / 360.0f);
+    }
+
+    // BAM -> float sine/cosine
+    for (int i = 0; i < BAM_SIZE; i++) {
+
+        float radians = i * 2.0f * PI / BAM_SIZE;
+
+        sin_lut[i] = sinf(radians);
+        cos_lut[i] = cosf(radians);
+    }
+}
+uint8_t float_to_bam(float angle) {
+    // Normalize angle to [0, 360)
+    while (angle < 0.0f)
+        angle += 360.0f;
+
+    while (angle >= 360.0f)
+        angle -= 360.0f;
+
+    int index = (int)angle;
+
+    return degree_to_bam[index];
+}
 
 // Functions // 
 
@@ -111,18 +150,21 @@ void WorldTranslation(player_t *player, wall_t *wall) {
   // angle manipulations here
 
   // clipping here
+  
 
 }
 
 void RenderWall(wall_t *wall, uint16_t FloorHeight, uint16_t CeilHeight) {
+  const d = VGA_WIDTH/2; // See https://sunshine2k.de/articles/algorithm/camperspscreentransform/simplisticcameraperspectivescreentransform.html
+
   const uint16_t ScreenMidWidth = VGA_WIDTH/2;
   const uint16_t ScreenMidHeight = VGA_HEIGHT/2;
 
   // Convert 2D coordinates to player's projection view
-  int16_t x0 = wall->x0.x / wall->x0.y;
-  int16_t x1 = wall->x1.x / wall->x1.y;
-  int16_t y0 = (FloorHeight / wall->x0.y);
-  int16_t y1 = (FloorHeight / wall->x1.y);
+  int16_t x0 = wall->x0.x * d / wall->x0.y;
+  int16_t x1 = wall->x1.x * d / wall->x1.y;
+  int16_t y0 = (FloorHeight * d / wall->x0.y);
+  int16_t y1 = (FloorHeight * d / wall->x1.y);
 
   // Convert new 3D coordinates to 2D screen coordinates
   // "Wall" coordinates are from -2^15 -> 2^15-1 in x and y (–32,768 to 32,767)
@@ -294,6 +336,8 @@ int main(){
   gpio_pull_up((BASE_KEYPAD_PIN+4)) ;
   gpio_pull_up((BASE_KEYPAD_PIN+5)) ;
   gpio_pull_up((BASE_KEYPAD_PIN+6)) ;
+
+  init_lookup_tables();
 
 
   // start core 1 

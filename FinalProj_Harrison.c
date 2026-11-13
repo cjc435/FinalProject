@@ -61,7 +61,7 @@ typedef signed int fix15 ;
 #define hitLeft(a) (a<int2fix15(100))
 #define hitRight(a) (a>int2fix15(540))
 
-#define BAM_SIZE 256
+#define BAM_SIZE 2^8
 #define DEG_SIZE 360
 #define PI 3.14159265358979323846f
 
