@@ -43,7 +43,7 @@ typedef struct {vector2d_t location; uint8_t angle;} player_t;
 #define BASE_KEYPAD_PIN 9
 #define KEYROWS         4
 #define NUMKEYS         12
-
+player_t player;
 // Global Variables //
 
 // Keypad
@@ -62,6 +62,7 @@ enum DebouncerState {
   Pressed,
   MaybeNotPressed
 };
+enum DebouncerState DebounceState = NotPressed;
 
 // VGA
 char color = WHITE ;
@@ -95,7 +96,7 @@ void RenderWall(wall_t *wall) {
   const uint16_t ScreenMidWidth = VGA_WIDTH/2;
   const uint16_t ScreenMidHeight = VGA_HEIGHT/2;
 
-  drawPixel();
+  // drawPixel();
 
 }
 
@@ -105,71 +106,83 @@ void RenderWall(wall_t *wall) {
 // This thread runs on core 0
 static PT_THREAD (protothread_keypad(struct pt *pt))
 {
-    // Indicate thread beginning
-    PT_BEGIN(pt) ;
+    static int i;
+    static uint32_t keypad;
+    static int PotentialKeypress = -1;
 
-    while(1) {
-      // Scan the keypad!
-      for (i=0; i<KEYROWS; i++) {
-          // Set a row low
-          gpio_put_masked((0xF << BASE_KEYPAD_PIN),
-                          (scancodes[i] << BASE_KEYPAD_PIN)) ;
-          // Small delay required
-          sleep_us(1) ;
-          // Read the keycode
-          keypad = ((gpio_get_all() >> BASE_KEYPAD_PIN) & 0x7F) ;
-          // Break if button(s) are pressed
-          if ((~keypad) & button) break ;
-      }
-      // If we found a button . . .
-      if ((~keypad) & button) {
-          // Look for a valid keycode.
-          for (i=0; i<NUMKEYS; i++) {
-              if (keypad == keycodes[i]) break ;
-          }
-          // If we don't find one, report invalid keycode
-          if (i==NUMKEYS) (i = -1) ;
-      }
-      // Otherwise, indicate invalid/non-pressed buttons
-      else (i=-1) ;
+    PT_BEGIN(pt);
 
-      // Print key to terminal
-      // printf("\n%d", i) ;
+    while (1) {
 
-      // Debouncing State Machine //
-      switch (DebounceState) {
-        case NotPressed:
-          if(i != -1) {
-            DebounceState = MaybePressed;
-            PotentialKeypress = i;
-          }
-          break;
-        case MaybePressed:
-          DebounceState = (i == PotentialKeypress) ? Pressed : NotPressed;
-          break;
-        case Pressed:
-          DebounceState = (i == PotentialKeypress) ? Pressed : MaybeNotPressed;
-          break;
-        case MaybeNotPressed:
-          DebounceState = (i == PotentialKeypress) ? Pressed : NotPressed;
-          break;
-        default:
-          DebounceState = NotPressed;
-          PotentialKeypress = -1;
-      }
+        // Scan keypad
+        for (i = 0; i < KEYROWS; i++) {
+            gpio_put_masked(
+                (0xF << BASE_KEYPAD_PIN),
+                (scancodes[i] << BASE_KEYPAD_PIN)
+            );
 
-      // Post the current keypressed to a global
-      CurrentKeyPressed = (DebounceState != NotPressed) ? PotentialKeypress : -1;
+            sleep_us(1);
 
-      // Triggers once upon a transition to pressed
-      KeystrokeTriggered = (DebounceState == MaybePressed) && (i == PotentialKeypress) ? 1 : 0;
+            keypad = ((gpio_get_all() >> BASE_KEYPAD_PIN) & 0x7F);
 
-      PT_YIELD_usec(30000) ;
+            if ((~keypad) & button) break;
+        }
+
+        // Find pressed key
+        if ((~keypad) & button) {
+            for (i = 0; i < NUMKEYS; i++) {
+                if (keypad == keycodes[i]) break;
+            }
+
+            if (i == NUMKEYS) i = -1;
+        }
+        else {
+            i = -1;
+        }
+
+        // Debouncing State Machine
+        switch (DebounceState) {
+
+            case NotPressed:
+                if (i != -1) {
+                    DebounceState = MaybePressed;
+                    PotentialKeypress = i;
+                }
+                break;
+
+            case MaybePressed:
+                DebounceState =
+                    (i == PotentialKeypress) ? Pressed : NotPressed;
+                break;
+
+            case Pressed:
+                DebounceState =
+                    (i == PotentialKeypress) ? Pressed : MaybeNotPressed;
+                break;
+
+            case MaybeNotPressed:
+                DebounceState =
+                    (i == PotentialKeypress) ? Pressed : NotPressed;
+                break;
+
+            default:
+                DebounceState = NotPressed;
+                PotentialKeypress = -1;
+        }
+
+        // Current pressed key
+        CurrentKeyPressed =
+            (DebounceState != NotPressed) ? PotentialKeypress : -1;
+
+        // Trigger once when key is confirmed pressed
+        KeystrokeTriggered =
+            (DebounceState == Pressed &&
+             i == PotentialKeypress) ? 1 : 0;
+
+        PT_YIELD_usec(30000);
     }
-    
-  
-    // Indicate thread end
-    PT_END(pt) ;
+
+    PT_END(pt);
 }
 
 // Animation on core 0
@@ -179,10 +192,7 @@ static PT_THREAD (protothread_render(struct pt *pt))
     PT_BEGIN(pt);
 
     // Render setup
-    player_t player;
-    player.location.x = 0;
-    player.location.y = 0;
-    player.angle = 0;
+
     
     wall_t wall;
     wall.x0.x = -10;
