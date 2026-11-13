@@ -66,6 +66,7 @@ char color = WHITE ;
 
 
 // Create a semaphore
+
 semaphore_t draw_semaphore ;
 
 uint8_t degree_to_bam[360];
