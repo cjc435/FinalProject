@@ -112,6 +112,7 @@ uint8_t float_to_bam(float angle) {
     return degree_to_bam[index];
 }
 
+
 // Animation on core 0
 static PT_THREAD (protothread_anim(struct pt *pt))
 {
