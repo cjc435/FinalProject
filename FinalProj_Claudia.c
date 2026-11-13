@@ -44,16 +44,6 @@ typedef struct {vector2d_t location; uint8_t angle;} player_t;
 #define KEYROWS         4
 #define NUMKEYS         12
 
-// Player control key 
-#define KEY_TURN_LEFT       0
-#define KEY_MOVE_FORWARD    1
-#define KEY_TURN_RIGHT      2
-#define KEY_STRAFE_LEFT     3
-#define KEY_MOVE_BACKWARD   4
-#define KEY_STRAFE_RIGHT    5
-#define KEY_FLY             6
-#define KEY_DESCEND         7
-
 // Global Variables //
 
 // Keypad
@@ -189,7 +179,6 @@ static PT_THREAD (protothread_render(struct pt *pt))
     PT_BEGIN(pt);
 
     // Render setup
-
     player_t player;
     player.location.x = 0;
     player.location.y = 0;
@@ -232,7 +221,12 @@ static PT_THREAD (protothread_player(struct pt *pt))
 
     while(1) {
     // Wait for the signal that the buffer's changed
-        PT_YIELD_UNTIL(pt, draw_start_signal());
+        PT_YIELD_UNTIL(pt, KeystrokeTriggered) ;
+
+        // press
+        // check key is pressed
+        // reset the value
+        // at the end do a wait
 
         // =================================
         // Keypad Player Movement
@@ -244,27 +238,29 @@ static PT_THREAD (protothread_player(struct pt *pt))
             player.location.y += sinf(player.angle) * move_speed;
         }
         // 4 Turn Left
-        if (CurrentKeyPressed == 3) {
+        else if (CurrentKeyPressed == 3) {
             player.location.x += cosf(player.angle) * move_speed;
             player.location.y -= sinf(player.angle) * move_speed;
         }
         // 5 move backward
-        if (CurrentKeyPressed == 4) {
+       else if (CurrentKeyPressed == 4) {
             player.location.x -= cosf(player.angle) * move_speed;
             player.location.y -= sinf(player.angle) * move_speed;
         }
         // 6 Turn Right
-        if (CurrentKeyPressed == 5) {
+        else if (CurrentKeyPressed == 5) {
             player.location.x -= cosf(player.angle) * move_speed;
             player.location.y += sinf(player.angle) * move_speed;
 
       }
-      
-      PT_YIELD_usec(30000);
+      CurrentKeyPressed = -1; // Reset the value
+      PT_YIELD_usec(30000) ;
+      // Reset the value
+      KeystrokeTriggered = 0;
 
     } // END WHILE(1)
   PT_END(pt);
-} // animation thread
+} 
 
 // ========================================
 // === core 1 main -- started in main below
