@@ -1,3 +1,19 @@
+# == DO NOT EDIT THE FOLLOWING LINES for the Raspberry Pi Pico VS Code Extension to work ==
+if(WIN32)
+    set(USERHOME $ENV{USERPROFILE})
+else()
+    set(USERHOME $ENV{HOME})
+endif()
+set(sdkVersion 2.3.0)
+set(toolchainVersion 15_2_Rel1)
+set(picotoolVersion 2.3.0)
+set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
+if (EXISTS ${picoVscode})
+    include(${picoVscode})
+endif()
+# ====================================================================================
+set(PICO_BOARD pico2 CACHE STRING "Board type")
+
 # cmake version
 cmake_minimum_required(VERSION 3.13)
 
@@ -5,25 +21,25 @@ cmake_minimum_required(VERSION 3.13)
 include(pico_sdk_import.cmake)
 
 # give the project a name (anything you want)
-project(VGA_Animation_Demo C CXX ASM)
+project(DoomRenderer C CXX ASM)
 
 # initialize the sdk
 pico_sdk_init()
 
-add_executable(VGA_Animation_Demo)
+add_executable(DoomRenderer)
 
 add_compile_options(-Ofast)
 
 # must match with pio filename and executable name from above
-pico_generate_pio_header(VGA_Animation_Demo ${CMAKE_CURRENT_LIST_DIR}/VGA/hsync.pio)
-pico_generate_pio_header(VGA_Animation_Demo ${CMAKE_CURRENT_LIST_DIR}/VGA/vsync.pio)
-pico_generate_pio_header(VGA_Animation_Demo ${CMAKE_CURRENT_LIST_DIR}/VGA/rgb.pio)
+pico_generate_pio_header(DoomRenderer ${CMAKE_CURRENT_LIST_DIR}/VGA/hsync.pio)
+pico_generate_pio_header(DoomRenderer ${CMAKE_CURRENT_LIST_DIR}/VGA/vsync.pio)
+pico_generate_pio_header(DoomRenderer ${CMAKE_CURRENT_LIST_DIR}/VGA/rgb.pio)
 
 # must match with executable name and source file names
-target_sources(VGA_Animation_Demo PRIVATE animation.c VGA/vga16_graphics_v3.c)
+target_sources(DoomRenderer PRIVATE FinalProj.c VGA/vga16_graphics_v3.c)
 
 # must match with executable name
-target_link_libraries(  VGA_Animation_Demo
+target_link_libraries(  DoomRenderer
                         PRIVATE
                         pico_stdlib
                         pico_divider
@@ -35,7 +51,8 @@ target_link_libraries(  VGA_Animation_Demo
                         hardware_adc
                         hardware_irq
                         hardware_clocks
-                        hardware_pll)
+                        hardware_pll
+                        )
 
 # must match with executable name
-pico_add_extra_outputs(VGA_Animation_Demo)
+pico_add_extra_outputs(DoomRenderer)
