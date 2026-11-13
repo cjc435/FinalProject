@@ -28,6 +28,9 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
+#include <stdint.h>
+#include <stdio.h>
+
 // Include Pico libraries
 #include "pico/stdlib.h"
 #include "pico/divider.h"
@@ -64,6 +67,27 @@ char color = WHITE ;
 
 // Create a semaphore
 semaphore_t draw_semaphore ;
+
+uint8_t degree_to_bam[360];
+
+void init_bam_lut(void) {
+    for (int i = 0; i < 360; i++) {
+        degree_to_bam[i] = (uint8_t)(i * 256.0f / 360.0f);
+    }
+}
+
+uint8_t float_to_bam(float angle) {
+    // Normalize angle to [0, 360)
+    while (angle < 0.0f)
+        angle += 360.0f;
+
+    while (angle >= 360.0f)
+        angle -= 360.0f;
+
+    int index = (int)angle;
+
+    return degree_to_bam[index];
+}
 
 // Animation on core 0
 static PT_THREAD (protothread_anim(struct pt *pt))
