@@ -61,6 +61,10 @@ typedef signed int fix15 ;
 #define hitLeft(a) (a<int2fix15(100))
 #define hitRight(a) (a>int2fix15(540))
 
+#define BAM_SIZE 256
+#define DEG_SIZE 360
+#define PI 3.14159265358979323846f
+
 // the color of the boid
 char color = WHITE ;
 
@@ -69,14 +73,32 @@ char color = WHITE ;
 
 semaphore_t draw_semaphore ;
 
-uint8_t degree_to_bam[360];
+uint8_t degree_to_bam[DEG_SIZE];
 
-void init_bam_lut(void) {
-    for (int i = 0; i < 360; i++) {
+float sin_lut[BAM_SIZE];
+float cos_lut[BAM_SIZE];
+
+// void init_bam_lut(void) {
+//     for (int i = 0; i < 360; i++) {
+//         degree_to_bam[i] = (uint8_t)(i * 256.0f / 360.0f);
+//     }
+// }
+void init_lookup_tables(void) {
+
+    // Float degrees -> uint8_t BAM
+    for (int i = 0; i < DEG_SIZE; i++) {
         degree_to_bam[i] = (uint8_t)(i * 256.0f / 360.0f);
     }
-}
 
+    // BAM -> float sine/cosine
+    for (int i = 0; i < BAM_SIZE; i++) {
+
+        float radians = i * 2.0f * PI / BAM_SIZE;
+
+        sin_lut[i] = sinf(radians);
+        cos_lut[i] = cosf(radians);
+    }
+}
 uint8_t float_to_bam(float angle) {
     // Normalize angle to [0, 360)
     while (angle < 0.0f)
