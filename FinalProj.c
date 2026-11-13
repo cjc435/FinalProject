@@ -113,14 +113,17 @@ void WorldTranslation(player_t *player, wall_t *wall) {
 }
 
 void RenderWall(wall_t *wall) {
-  int16_t x0 = wall->x0.x / wall->x0.y;
-  int16_t x1 = wall->x1.x / wall->x1.y;
-
   const uint16_t ScreenMidWidth = VGA_WIDTH/2;
   const uint16_t ScreenMidHeight = VGA_HEIGHT/2;
 
-  drawPixel();
+  // Convert 2D coordinates to player's projection view
+  int16_t x0 = wall->x0.x / wall->x0.y;
+  int16_t x1 = wall->x1.x / wall->x1.y;
 
+  // Convert new 3D coordinates to 2D screen coordinates
+
+  drawPixel(x0, 50, WHITE);
+  drawPixel(x1, 50, WHITE);
 }
 
 // ==================================================
