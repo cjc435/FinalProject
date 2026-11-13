@@ -54,6 +54,7 @@ typedef signed int fix15 ;
 
 
 typedef struct {int16_t x; int16_t y;} vector2d_t;
+typedef struct {uint8_t x; uint8_t y;} screenCoord_t;
 typedef struct {vector2d_t x0; vector2d_t x1;} wall_t;
 typedef struct {vector2d_t location; uint8_t angle;} player_t;
 // typedef struct {int NumWalls; int floor; int ceil; wall_t wall;} sector_t;
@@ -140,6 +141,14 @@ uint8_t float_to_bam(float angle) {
 
 // Functions // 
 
+screenCoord_t ConvertFovToScreen(vector2d_t point) {
+  screenCoord_t screen_point;
+  screen_point.x = point.x + (VGA_WIDTH/2 - 0.5);
+  screen_point.y = -point.y + (VGA_HEIGHT/2 + 0.5);
+
+  return screen_point;
+}
+
 void WorldTranslation(player_t *player, wall_t *wall) {
 
   wall->x0.x = wall->x0.x - player->location.x;
@@ -155,27 +164,28 @@ void WorldTranslation(player_t *player, wall_t *wall) {
 }
 
 void RenderWall(wall_t *wall, uint16_t FloorHeight, uint16_t CeilHeight) {
-  const d = VGA_WIDTH/2; // See https://sunshine2k.de/articles/algorithm/camperspscreentransform/simplisticcameraperspectivescreentransform.html
-
+  const int d = VGA_WIDTH/2; // See https://sunshine2k.de/articles/algorithm/camperspscreentransform/simplisticcameraperspectivescreentransform.html
   const uint16_t ScreenMidWidth = VGA_WIDTH/2;
   const uint16_t ScreenMidHeight = VGA_HEIGHT/2;
 
+  screenCoord_t VGAScreenPoint[2];
+  vector2d_t ScreenSpacePoint[2];
+
   // Convert 2D coordinates to player's projection view
-  int16_t x0 = wall->x0.x * d / wall->x0.y;
-  int16_t x1 = wall->x1.x * d / wall->x1.y;
-  int16_t y0 = (FloorHeight * d / wall->x0.y);
-  int16_t y1 = (FloorHeight * d / wall->x1.y);
+  ScreenSpacePoint[0].x = wall->x0.x * d / wall->x0.y;
+  ScreenSpacePoint[1].x = wall->x1.x * d / wall->x1.y;
+  ScreenSpacePoint[0].y = (FloorHeight * d / wall->x0.y);
+  ScreenSpacePoint[1].y = (FloorHeight * d / wall->x1.y);
 
   // Convert new 3D coordinates to 2D screen coordinates
-  // "Wall" coordinates are from -2^15 -> 2^15-1 in x and y (–32,768 to 32,767)
   // Screen goes from 0 -> 640 in x and 0 -> 480 in y
-  // Steps:
-  // Convert wall coordinates from (–32,768 to 32,767) to (0 to 65,535) (both x and y)
-  // Convert divide by 65,535 
+  VGAScreenPoint[0] = ConvertFovToScreen(ScreenSpacePoint[0]);
+  VGAScreenPoint[1] = ConvertFovToScreen(ScreenSpacePoint[1]);
 
-  drawPixel(x0, y0, WHITE);
-  drawPixel(x1, y1, WHITE);
+  drawVLine((short)VGAScreenPoint[0].x, (short)VGAScreenPoint[0].y, 10, WHITE);
+  drawVLine((short)VGAScreenPoint[1].x, (short)VGAScreenPoint[1].y, 10, WHITE);
 }
+
 
 // ==================================================
 // === Keypad thread 
@@ -272,10 +282,10 @@ static PT_THREAD (protothread_render(struct pt *pt))
     player.angle = 0;
     
     wall_t wall;
-    wall.x0.x = -10;
-    wall.x0.y = 20;
-    wall.x1.x = 21;
-    wall.x1.y = 26;
+    wall.x0.x = -1;
+    wall.x0.y = 5;
+    wall.x1.x = 1;
+    wall.x1.y = 5;
 
     while(1) {
       // Wait for the signal that the buffer's changed
@@ -285,7 +295,7 @@ static PT_THREAD (protothread_render(struct pt *pt))
       // Translate the wall around the player. Returns wall transformations
       WorldTranslation(&player, &wall);
       
-      RenderWall(&wall, 15, 20);
+      RenderWall(&wall, 5, 10);
 
 
      // NEVER exit while
