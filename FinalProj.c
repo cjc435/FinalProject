@@ -54,9 +54,12 @@ typedef signed int fix15 ;
 
 
 typedef struct {int16_t x; int16_t y;} vector2d_t;
-typedef struct {uint8_t x; uint8_t y;} screenCoord_t;
-typedef struct {vector2d_t x0; vector2d_t x1;} wall_t;
-typedef struct {vector2d_t location; uint8_t angle;} player_t;
+typedef struct {int16_t x[2]; int16_t y[2];} wall_t;
+typedef struct {wall_t wall[4]; int16_t NumWalls; int16_t floor; int16_t celing; } sector_t;
+typedef struct {int16_t x; int16_t y; int16_t height; uint8_t angle;} player_t;
+player_t player;
+
+
 // typedef struct {int NumWalls; int floor; int ceil; wall_t wall;} sector_t;
 
 
@@ -79,7 +82,6 @@ unsigned int scancodes[KEYROWS] = {   0xE, 0xD, 0xB, 0x7} ;
 unsigned int button = 0x70 ;
 
 int CurrentKeyPressed = -1;
-bool KeystrokeTriggered = 0;
 
 enum DebouncerState {
   NotPressed,
@@ -139,52 +141,135 @@ uint8_t float_to_bam(float angle) {
     return degree_to_bam[index];
 }
 
+
 // Functions // 
 
-screenCoord_t ConvertFovToScreen(vector2d_t point) {
-  screenCoord_t screen_point;
-  screen_point.x = point.x + (VGA_WIDTH/2 - 0.5);
-  screen_point.y = -point.y + (VGA_HEIGHT/2 + 0.5);
+wall_t WorldTranslation(player_t player, wall_t wall) {
 
-  return screen_point;
-}
-
-void WorldTranslation(player_t *player, wall_t *wall) {
-
-  wall->x0.x = wall->x0.x - player->location.x;
-  wall->x0.y = wall->x0.y - player->location.y;  
-  wall->x1.x = wall->x1.x - player->location.x;
-  wall->x1.y = wall->x1.y - player->location.y;
+  wall_t TranslatedWall;
+  TranslatedWall.x[0] = wall.x[0] - player.x;
+  TranslatedWall.y[0] = wall.y[0] - player.y;  
+  TranslatedWall.x[1] = wall.x[1] - player.x;
+  TranslatedWall.y[1] = wall.y[1] - player.y;
+  return TranslatedWall;
 
   // angle manipulations here
 
   // clipping here
   
-
 }
 
-void RenderWall(wall_t *wall, uint16_t FloorHeight, uint16_t CeilHeight) {
-  const int d = VGA_WIDTH/2; // See https://sunshine2k.de/articles/algorithm/camperspscreentransform/simplisticcameraperspectivescreentransform.html
-  const uint16_t ScreenMidWidth = VGA_WIDTH/2;
-  const uint16_t ScreenMidHeight = VGA_HEIGHT/2;
+int16_t ConvertHorizontalFovToScreen(int16_t x) {
+  int16_t screen_point;
+  screen_point = (uint16_t)((float)x + ((VGA_WIDTH-1)/2));
+  return screen_point;
+}
 
-  screenCoord_t VGAScreenPoint[2];
-  vector2d_t ScreenSpacePoint[2];
+int16_t ConvertVerticalFovToScreen(int16_t y) {
+  int16_t screen_point;
+  screen_point = (uint16_t)((float)y*-1 + ((VGA_HEIGHT-1)/2));
+  return screen_point;
+}
+
+
+void RenderWall(wall_t wall, uint16_t FloorHeight, uint16_t CeilHeight) {
+  uint16_t x[2];
+  uint16_t yFloor[2];
+  uint16_t yCeil[2];
+
+  const int d = VGA_WIDTH/2; // See https://sunshine2k.de/articles/algorithm/camperspscreentransform/simplisticcameraperspectivescreentransform.html
 
   // Convert 2D coordinates to player's projection view
-  ScreenSpacePoint[0].x = wall->x0.x * d / wall->x0.y;
-  ScreenSpacePoint[1].x = wall->x1.x * d / wall->x1.y;
-  ScreenSpacePoint[0].y = (FloorHeight * d / wall->x0.y);
-  ScreenSpacePoint[1].y = (FloorHeight * d / wall->x1.y);
+  x[0] = wall.x[0] * d / wall.y[0];
+  x[1] = wall.x[1] * d / wall.y[1];
+
+  yFloor[0] = (FloorHeight * d / wall.y[0]);
+  yFloor[1] = (FloorHeight * d / wall.y[1]);
+
+  yCeil[0] = (CeilHeight * d / wall.y[1]);
+  yCeil[1] = (CeilHeight * d / wall.y[1]);
 
   // Convert new 3D coordinates to 2D screen coordinates
   // Screen goes from 0 -> 640 in x and 0 -> 480 in y
-  VGAScreenPoint[0] = ConvertFovToScreen(ScreenSpacePoint[0]);
-  VGAScreenPoint[1] = ConvertFovToScreen(ScreenSpacePoint[1]);
 
-  drawVLine((short)VGAScreenPoint[0].x, (short)VGAScreenPoint[0].y, 10, WHITE);
-  drawVLine((short)VGAScreenPoint[1].x, (short)VGAScreenPoint[1].y, 10, WHITE);
+  x[0]      = ConvertHorizontalFovToScreen  (x[0]);
+  x[1]      = ConvertHorizontalFovToScreen  (x[1]);
+  yFloor[0] = ConvertVerticalFovToScreen    (yFloor[0]);
+  yFloor[1] = ConvertVerticalFovToScreen    (yFloor[1]);
+  yCeil[0]  = ConvertVerticalFovToScreen    (yCeil[0]);
+  yCeil[1]  = ConvertVerticalFovToScreen    (yCeil[1]);
+
+  drawPixel((short)x[0], (short)yFloor[0], WHITE);
+  drawPixel((short)x[0], (short)yCeil[0], WHITE);
+  drawPixel((short)x[1], (short)yFloor[1], WHITE);
+  drawPixel((short)x[1], (short)yCeil[1], WHITE);
 }
+
+void init_player(player_t *player) {
+  player->x = 0;
+  player->y = 0;
+  player->angle = 0;
+  player->height = 0;
+}
+
+void init_wall(wall_t *wall, int16_t x0, int16_t y0, int16_t x1, int16_t y1) {
+  wall->x[0] = x0;
+  wall->y[0] = y0;
+  wall->x[1] = x1;
+  wall->y[1] = y1;
+}
+
+// void init_sector(sector_t sector, wall_t &wall, int16_t NumWalls, int16_t floor, int16_t ceiling) {
+//   wall->x[0] = x0;
+//   wall->y[0] = y0;
+//   wall->x[1] = x1;
+//   wall->y[1] = y1;
+// }
+
+// Protothreads //
+
+// Rendering on core 0
+static PT_THREAD (protothread_render(struct pt *pt))
+{
+    // Mark beginning of thread
+    PT_BEGIN(pt);
+
+    // Render setup
+    wall_t wall[4];
+    wall_t TranslatedWall;
+    init_wall(&wall[0], -1, 5, 1, 5); // Initialize wall with coordinates
+    init_wall(&wall[1], -1, 5, -1, 10); // Initialize wall with coordinates
+    init_wall(&wall[2], -1, 10, 1, 10); // Initialize wall with coordinates
+    init_wall(&wall[3], 1, 10, 1, 5); // Initialize wall with coordinates
+
+    sector_t sector;
+    sector.NumWalls = 4;
+    sector.floor = 0;
+    sector.celing = 1;
+    sector.wall[0] = wall[0];
+    sector.wall[1] = wall[1];
+    sector.wall[2] = wall[2];
+    sector.wall[3] = wall[3];
+
+
+    while(1) {
+      // Wait for the signal that the buffer's changed
+      PT_YIELD_UNTIL(pt, draw_start_signal()) ;
+      // Clear the buffer
+      clearLowFrame(0, BLACK);
+      // for (every wall) {
+      // Translate the wall around the player. Returns wall transformations
+      TranslatedWall = WorldTranslation(player, wall);
+      
+      RenderWall(TranslatedWall, 0, 1); // Render the wall with floor and ceiling heights
+
+
+     // NEVER exit while
+    } // END WHILE(1)
+  PT_END(pt);
+} // animation thread
+
+
 
 
 // ==================================================
@@ -258,9 +343,6 @@ static PT_THREAD (protothread_keypad(struct pt *pt))
       // Post the current keypressed to a global
       CurrentKeyPressed = (DebounceState != NotPressed) ? PotentialKeypress : -1;
 
-      // Triggers once upon a transition to pressed
-      KeystrokeTriggered = (DebounceState == MaybePressed) && (i == PotentialKeypress) ? 1 : 0;
-
 
       PT_YIELD_usec(30000) ;
     }
@@ -268,48 +350,107 @@ static PT_THREAD (protothread_keypad(struct pt *pt))
     PT_END(pt) ;
 }
 
-// Animation on core 0
-static PT_THREAD (protothread_render(struct pt *pt))
+
+// ==================================================
+// === Player Movement Thread
+// ==================================================
+static PT_THREAD (protothread_player(struct pt *pt))
 {
     // Mark beginning of thread
     PT_BEGIN(pt);
 
-    // Render setup
-
-    player_t player;
-    player.location.x = 0;
-    player.location.y = 0;
-    player.angle = 0;
-    
-    wall_t wall;
-    wall.x0.x = -1;
-    wall.x0.y = 5;
-    wall.x1.x = 1;
-    wall.x1.y = 5;
+    // Player movement speed
+    float move_speed = 1.0f;
 
     while(1) {
-      // Wait for the signal that the buffer's changed
-      PT_YIELD_UNTIL(pt, draw_start_signal()) ;
-      // Clear the buffer
-      clearLowFrame(0, BLACK);
-      // Translate the wall around the player. Returns wall transformations
-      WorldTranslation(&player, &wall);
-      
-      RenderWall(&wall, 5, 10);
+      // Wait until the keypressed in not invalid
+      PT_YIELD_UNTIL(pt, (CurrentKeyPressed != -1)) ;
 
+      // =================================
+      // Keypad Player Movement
+      // =================================
 
-     // NEVER exit while
+      // 2 Move Forward
+      if (CurrentKeyPressed == 1) {
+          player.x += cosf(player.angle) * move_speed;
+          player.y += sinf(player.angle) * move_speed;
+      }
+      // 4 Turn Left
+      else if (CurrentKeyPressed == 3) {
+          player.x += cosf(player.angle) * move_speed;
+          player.y -= sinf(player.angle) * move_speed;
+      }
+      // 5 move backward
+      else if (CurrentKeyPressed == 4) {
+          player.x -= cosf(player.angle) * move_speed;
+          player.y -= sinf(player.angle) * move_speed;
+      }
+      // 6 Turn Right
+      else if (CurrentKeyPressed == 5) {
+          player.x -= cosf(player.angle) * move_speed;
+          player.y += sinf(player.angle) * move_speed;
+
+      }
+
     } // END WHILE(1)
   PT_END(pt);
-} // animation thread
+} 
 
+
+// User input thread. User can change draw speed
+static PT_THREAD (protothread_serial(struct pt *pt))
+{
+    PT_BEGIN(pt) ;
+    static char classifier ;
+    int16_t movement = 1;
+
+    while(1) {
+        sprintf(pt_serial_out_buffer, "input a command: (w,a,s,d)\n");
+        serial_write ;
+        // spawn a thread to do the non-blocking serial read
+        serial_read ;
+        // convert input string to number
+        sscanf(pt_serial_in_buffer,"%c", &classifier) ;
+
+        switch (classifier) {
+            case 'w':
+              player.y += movement;
+              break;
+
+            case 'a':
+              player.x -= movement;
+              break;
+
+            case 's':
+              player.y -= movement;
+              break;
+            
+            case 'd':
+              player.x += movement;
+              break;
+
+            case 'q':
+              player.x += movement;
+              break;
+
+            case 'e':
+              player.x += movement;
+              break;
+        }
+    }
+    PT_END(pt) ;
+}
 
 // ========================================
 // === core 1 main -- started in main below
 // ========================================
 void core1_main(){
   // Add animation thread
-  pt_add_thread(protothread_keypad) ;
+  // pt_add_thread(protothread_keypad) ;
+  // pt_add_thread(protothread_player) ;
+
+  // DEBUG PROTOTHREAD
+  pt_add_thread(protothread_serial) ;
   // Start the scheduler
   pt_schedule_start ;
 
@@ -348,6 +489,8 @@ int main(){
   gpio_pull_up((BASE_KEYPAD_PIN+6)) ;
 
   init_lookup_tables();
+
+  init_player(&player);
 
 
   // start core 1 
