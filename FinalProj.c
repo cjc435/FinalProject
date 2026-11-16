@@ -53,10 +53,10 @@ typedef signed int fix15 ;
 #define divfix(a,b) (fix15)(div_s64s64( (((signed long long)(a)) << 15), ((signed long long)(b))))
 
 
-typedef struct {int16_t x; int16_t y;} vector2d_t;
-typedef struct {int16_t x[2]; int16_t y[2];} wall_t;
-typedef struct {wall_t wall[4]; int16_t NumWalls; int16_t floor; int16_t celing; } sector_t;
-typedef struct {int16_t x; int16_t y; int16_t height; uint8_t angle;} player_t;
+typedef struct {float x; float y;} vector2d_t;
+typedef struct {float x[2]; float y[2];} wall_t;
+typedef struct {wall_t wall[4]; int NumWalls; float floor; float celing; } sector_t;
+typedef struct {float x; float y; float height; uint8_t angle;} player_t;
 player_t player;
 
 
@@ -96,11 +96,6 @@ char color = WHITE ;
 // Screen width/height
 #define VGA_WIDTH 640
 #define VGA_HEIGHT 480
-
-
-// Renderer
-
-
 
 // Binary Angular Measurement (BAM)
 #define BAM_SIZE 256
@@ -144,50 +139,75 @@ uint8_t float_to_bam(float angle) {
 
 // Functions // 
 
+// Initialize Functions
+void init_player(player_t *player) {
+  player->x = 0;
+  player->y = 0;
+  player->angle = 0;
+  player->height = 1;
+}
+
+void init_wall(wall_t *wall, float x0, float y0, float x1, float y1) {
+  wall->x[0] = x0;
+  wall->y[0] = y0;
+  wall->x[1] = x1;
+  wall->y[1] = y1;
+}
+
+// void init_sector(sector_t sector, wall_t &wall, int NumWalls, int floor, int ceiling) {
+//   wall->x[0] = x0;
+//   wall->y[0] = y0;
+//   wall->x[1] = x1;
+//   wall->y[1] = y1;
+// }
+
+
+
 wall_t WorldTranslation(player_t player, wall_t wall) {
 
   wall_t TranslatedWall;
-  TranslatedWall.x[0] = wall.x[0] - player.x;
-  TranslatedWall.y[0] = wall.y[0] - player.y;  
-  TranslatedWall.x[1] = wall.x[1] - player.x;
-  TranslatedWall.y[1] = wall.y[1] - player.y;
-  return TranslatedWall;
-
-  // angle manipulations here
-
-  // clipping here
   
+  for(int i=0; i<2; i++) {
+    // Move the wall around the player
+    TranslatedWall.x[i] = wall.x[i] - player.x;
+    TranslatedWall.y[i] = wall.y[i] - player.y;
+
+    // Rotate the wall around the player
+    TranslatedWall.x[i] = TranslatedWall.x[i] * cos_lut[player.angle] - TranslatedWall.y[i] * sin_lut[player.angle];
+    TranslatedWall.y[i] = TranslatedWall.x[i] * sin_lut[player.angle] + TranslatedWall.y[i] * cos_lut[player.angle];
+
+    // Add clipping here
+  }
+  return TranslatedWall;  
 }
 
-int16_t ConvertHorizontalFovToScreen(int16_t x) {
-  int16_t screen_point;
-  screen_point = (uint16_t)((float)x + ((VGA_WIDTH-1)/2));
+int ConvertHorizontalFovToScreen(int x) {
+  int screen_point = (int)(x + (((float)VGA_WIDTH-1.0)/2.0));
   return screen_point;
 }
 
-int16_t ConvertVerticalFovToScreen(int16_t y) {
-  int16_t screen_point;
-  screen_point = (uint16_t)((float)y*-1 + ((VGA_HEIGHT-1)/2));
+int ConvertVerticalFovToScreen(int y) {
+  int screen_point = (int)(-y + (((float)VGA_HEIGHT-1.0)/2.0));
   return screen_point;
 }
 
 
-void RenderWall(wall_t wall, uint16_t FloorHeight, uint16_t CeilHeight) {
-  uint16_t x[2];
-  uint16_t yFloor[2];
-  uint16_t yCeil[2];
+void RenderWall(wall_t wall, float FloorHeight, float CeilHeight) {
+  int x[2];
+  int yFloor[2];
+  int yCeil[2];
 
-  const int d = VGA_WIDTH/2; // See https://sunshine2k.de/articles/algorithm/camperspscreentransform/simplisticcameraperspectivescreentransform.html
+  const float d = VGA_WIDTH/2; // See https://sunshine2k.de/articles/algorithm/camperspscreentransform/simplisticcameraperspectivescreentransform.html
 
   // Convert 2D coordinates to player's projection view
   x[0] = wall.x[0] * d / wall.y[0];
   x[1] = wall.x[1] * d / wall.y[1];
 
-  yFloor[0] = (FloorHeight * d / wall.y[0]);
-  yFloor[1] = (FloorHeight * d / wall.y[1]);
+  yFloor[0] = FloorHeight * d / wall.y[0];
+  yFloor[1] = FloorHeight * d / wall.y[1];
 
-  yCeil[0] = (CeilHeight * d / wall.y[1]);
-  yCeil[1] = (CeilHeight * d / wall.y[1]);
+  yCeil[0] = CeilHeight * d / wall.y[1];
+  yCeil[1] = CeilHeight * d / wall.y[1];
 
   // Convert new 3D coordinates to 2D screen coordinates
   // Screen goes from 0 -> 640 in x and 0 -> 480 in y
@@ -199,32 +219,17 @@ void RenderWall(wall_t wall, uint16_t FloorHeight, uint16_t CeilHeight) {
   yCeil[0]  = ConvertVerticalFovToScreen    (yCeil[0]);
   yCeil[1]  = ConvertVerticalFovToScreen    (yCeil[1]);
 
-  drawPixel((short)x[0], (short)yFloor[0], WHITE);
-  drawPixel((short)x[0], (short)yCeil[0], WHITE);
-  drawPixel((short)x[1], (short)yFloor[1], WHITE);
-  drawPixel((short)x[1], (short)yCeil[1], WHITE);
+  // drawPixel((short)x[0], (short)yFloor[0], WHITE);
+  // drawPixel((short)x[0], (short)yCeil[0], WHITE);
+  // drawPixel((short)x[1], (short)yFloor[1], WHITE);
+  // drawPixel((short)x[1], (short)yCeil[1], WHITE);
+
+  drawLine((short)x[0], (short)yFloor[0], (short)x[1], (short)yFloor[1], WHITE);
+  drawLine((short)x[0], (short)yCeil[0], (short)x[1], (short)yCeil[1], WHITE);
+  drawLine((short)x[0], (short)yFloor[0], (short)x[0], (short)yCeil[0], WHITE);
+  drawLine((short)x[1], (short)yFloor[1], (short)x[1], (short)yCeil[1], WHITE);
 }
 
-void init_player(player_t *player) {
-  player->x = 0;
-  player->y = 0;
-  player->angle = 0;
-  player->height = 0;
-}
-
-void init_wall(wall_t *wall, int16_t x0, int16_t y0, int16_t x1, int16_t y1) {
-  wall->x[0] = x0;
-  wall->y[0] = y0;
-  wall->x[1] = x1;
-  wall->y[1] = y1;
-}
-
-// void init_sector(sector_t sector, wall_t &wall, int16_t NumWalls, int16_t floor, int16_t ceiling) {
-//   wall->x[0] = x0;
-//   wall->y[0] = y0;
-//   wall->x[1] = x1;
-//   wall->y[1] = y1;
-// }
 
 // Protothreads //
 
@@ -237,13 +242,19 @@ static PT_THREAD (protothread_render(struct pt *pt))
     // Render setup
     wall_t wall[4];
     wall_t TranslatedWall;
+    // See: https://coordinategrid.com/
+    // init_wall(&wall[0], 4, 2, 8, 2); // Initialize wall with coordinates
+    // init_wall(&wall[1], 8, 2, 8, -2); // Initialize wall with coordinates
+    // init_wall(&wall[2], 8, -2, 4, -2); // Initialize wall with coordinates
+    // init_wall(&wall[3], 4, -2, 4, 2); // Initialize wall with coordinates
+
     init_wall(&wall[0], -1, 5, 1, 5); // Initialize wall with coordinates
     init_wall(&wall[1], -1, 5, -1, 10); // Initialize wall with coordinates
     init_wall(&wall[2], -1, 10, 1, 10); // Initialize wall with coordinates
     init_wall(&wall[3], 1, 10, 1, 5); // Initialize wall with coordinates
 
     sector_t sector;
-    sector.NumWalls = 4;
+    sector.NumWalls = 1;
     sector.floor = 0;
     sector.celing = 1;
     sector.wall[0] = wall[0];
@@ -257,12 +268,16 @@ static PT_THREAD (protothread_render(struct pt *pt))
       PT_YIELD_UNTIL(pt, draw_start_signal()) ;
       // Clear the buffer
       clearLowFrame(0, BLACK);
-      // for (every wall) {
-      // Translate the wall around the player. Returns wall transformations
-      TranslatedWall = WorldTranslation(player, wall);
-      
-      RenderWall(TranslatedWall, 0, 1); // Render the wall with floor and ceiling heights
 
+      for (int i=0; i<sector.NumWalls; i++) {
+        // Translate the wall around the player. Returns wall transformations
+        TranslatedWall = WorldTranslation(player, wall[i]);
+
+        float floor =   sector.floor - player.height;
+        float ceiling = sector.celing - player.height;
+        
+        RenderWall(TranslatedWall, floor, ceiling); // Render the wall with floor and ceiling heights
+      }
 
      // NEVER exit while
     } // END WHILE(1)
@@ -402,7 +417,7 @@ static PT_THREAD (protothread_serial(struct pt *pt))
 {
     PT_BEGIN(pt) ;
     static char classifier ;
-    int16_t movement = 1;
+    float movement = 1;
 
     while(1) {
         sprintf(pt_serial_out_buffer, "input a command: (w,a,s,d)\n");
@@ -413,28 +428,51 @@ static PT_THREAD (protothread_serial(struct pt *pt))
         sscanf(pt_serial_in_buffer,"%c", &classifier) ;
 
         switch (classifier) {
+            // Forward
             case 'w':
-              player.y += movement;
+              player.x += sin_lut[player.angle] * movement;
+              player.y += cos_lut[player.angle] * movement;
               break;
 
-            case 'a':
-              player.x -= movement;
-              break;
-
+            // Backward
             case 's':
-              player.y -= movement;
+              player.x -= sin_lut[player.angle] * movement;
+              player.y -= cos_lut[player.angle] * movement;
               break;
-            
+
+            // Strafe Left
+            case 'a':
+              player.x -= cos_lut[player.angle] * movement;
+              player.y += sin_lut[player.angle] * movement;
+              break;
+
+            // Strafe Right
             case 'd':
-              player.x += movement;
+              player.x += cos_lut[player.angle] * movement;
+              player.y -= sin_lut[player.angle] * movement;
               break;
 
+            // Fly Up
+            case 'z':
+              player.height += movement;
+              break;
+
+            // Fly Down
+            case 'x':
+              player.height -= movement;
+              break;
+
+            // Rotate Left  
             case 'q':
-              player.x += movement;
+              player.angle -= 1;
               break;
 
+            // Rotate Right
             case 'e':
-              player.x += movement;
+              player.angle += 1;
+              break;
+
+            default:
               break;
         }
     }
