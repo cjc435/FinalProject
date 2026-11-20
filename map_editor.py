@@ -27,6 +27,7 @@ start_point = None
 
 # Store all completed walls
 walls = []
+wall_ids = []
 
 def stop_drawing(event):
     global start_point
@@ -65,36 +66,44 @@ def on_click(event):
         # Second click: draw wall
         x0, y0 = start_point
 
-        canvas.create_line(
+        wall_id = canvas.create_line(
             x0, y0, x, y,
             fill="black",
             width=3
         )
 
-        # Save the wall coordinates
+        # Store wall coordinates
         walls.append(((x0, y0), (x, y)))
+
+        # Store Canvas item ID separately
+        wall_ids.append(wall_id)
 
         print(f"Wall created: {walls[-1]}")
 
         # Use the endpoint as the start of the next wall
         start_point = (x, y)
+
+
 def undo_wall(event=None):
     global start_point
 
-    if not walls:
+    if not wall_ids:
         print("No walls to undo")
         return
 
-    # Remove the most recently created wall
-    x0, y0, wall_id = walls.pop()
-
-    # Delete the wall from the Canvas
+    # Remove last wall from the Canvas
+    wall_id = wall_ids.pop()
     canvas.delete(wall_id)
 
-    # Stop the current wall chain
+    # Remove its coordinates
+    walls.pop()
+
+    # Stop drawing the current wall chain
     start_point = None
 
-    print(f"Undo wall: {x0} -> {y0}")
+    print("Last wall removed")
+
+
 # Connect mouse clicks to the function
 canvas.bind("<Button-1>", on_click)
 
