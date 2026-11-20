@@ -1,108 +1,341 @@
 import tkinter as tk
+import math
+from dataclasses import dataclass, field
 
-# Window settings
+# ==========================================
+# Configuration
+# ==========================================
+
 WINDOW_WIDTH = 800
 WINDOW_HEIGHT = 600
 GRID_SIZE = 25
 
-# Create main window
-root = tk.Tk()
-root.title("DOOM Map Editor")
-root.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
 
-# Create canvas
-canvas = tk.Canvas(root, width=WINDOW_WIDTH, height=WINDOW_HEIGHT, bg="white")
-canvas.pack(fill="both", expand=True)
+# ==========================================
+# Data Structures
+# ==========================================
 
-# Draw vertical lines
-for x in range(0, WINDOW_WIDTH, GRID_SIZE):
-    canvas.create_line(x, 0, x, WINDOW_HEIGHT, fill="lightgray")
+@dataclass
+class WallGroup:
+    # Grid coordinates, not pixel coordinates
+    points: list[tuple[int, int]] = field(default_factory=list)
 
-# Draw horizontal lines
-for y in range(0, WINDOW_HEIGHT, GRID_SIZE):
-    canvas.create_line(0, y, WINDOW_WIDTH, y, fill="lightgray")
+    # Tkinter Canvas IDs
+    point_ids: list[int] = field(default_factory=list)
+    wall_ids: list[int] = field(default_factory=list)
 
-# Store the starting point of the next wall
-start_point = None
 
-# Store all completed walls
-walls = []
+# ==========================================
+# Map Editor
+# ==========================================
 
-def stop_drawing(event):
-    global start_point
+class MapEditor:
 
-    # Stop connecting new points to the previous wall
-    start_point = None
+    def __init__(self, root):
+        self.root = root
+        self.root.title("DOOM Map Editor")
+        self.root.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
 
-    print("Wall chain ended")
+        # All wall groups
+        self.groups: list[WallGroup] = []
 
-# Handle mouse clicks
-def on_click(event):
-    global start_point
-    # Ignore Control + left-click
-    if event.state & 0x0004:
-        return
-    # Snap mouse position to grid
-    x = round(event.x / GRID_SIZE) * GRID_SIZE
-    y = round(event.y / GRID_SIZE) * GRID_SIZE
+        # Group currently being drawn
+        self.current_group: WallGroup | None = None
+        # Player information
+        self.player_position = (15, 15)
+        self.player_angle = 0
 
-    # Draw a red dot
-    radius = 4
-    canvas.create_oval(
-        x - radius,
-        y - radius,
-        x + radius,
-        y + radius,
-        fill="red"
-    )
+        # Canvas IDs for player
+        self.player_id = None
+        self.direction_id = None
 
-    if start_point is None:
-        # First click: remember starting point
-        start_point = (x, y)
-        print(f"Wall start: {start_point}")
+        # Editing mode: "wall" or "player"
+        self.mode = "wall"
 
-    else:
-        # Second click: draw wall
-        x0, y0 = start_point
+        # Create canvas
+        self.canvas = tk.Canvas(
+            root,
+            width=WINDOW_WIDTH,
+            height=WINDOW_HEIGHT,
+            bg="white"
+        )
+        self.canvas.pack(fill="both", expand=True)
 
-        canvas.create_line(
-            x0, y0, x, y,
+        self.draw_grid()
+        self.draw_player()
+
+        # Mouse controls
+        self.canvas.bind("<Button-1>", self.on_click)
+        self.canvas.bind("<Button-2>", self.stop_drawing)
+        self.canvas.bind("<Button-3>", self.stop_drawing)
+        self.canvas.bind("<Control-Button-1>", self.stop_drawing)
+
+        # Keyboard controls
+        self.root.bind("<Command-z>", self.undo)
+        # Player movement controls
+        self.root.bind("<Up>", self.move_player)
+        self.root.bind("<Down>", self.move_player)
+        self.root.bind("<Left>", self.move_player)
+        self.root.bind("<Right>", self.move_player)
+
+
+    # ======================================
+    # Draw Grid
+    # ======================================
+
+    def draw_grid(self):
+
+        for x in range(0, WINDOW_WIDTH, GRID_SIZE):
+            self.canvas.create_line(
+                x, 0, x, WINDOW_HEIGHT,
+                fill="lightgray"
+            )
+
+        for y in range(0, WINDOW_HEIGHT, GRID_SIZE):
+            self.canvas.create_line(
+                0, y, WINDOW_WIDTH, y,
+                fill="lightgray"
+            )
+
+
+    # ======================================
+    # Snap Mouse to Grid
+    # ======================================
+
+    def snap_to_grid(self, x, y):
+
+        grid_x = round(x / GRID_SIZE)
+        grid_y = round(y / GRID_SIZE)
+
+        # Keep points inside the visible grid
+        grid_x = max(0, min(grid_x, WINDOW_WIDTH // GRID_SIZE - 1))
+        grid_y = max(0, min(grid_y, WINDOW_HEIGHT // GRID_SIZE - 1))
+
+        return grid_x, grid_y
+
+
+    # ======================================
+    # Draw Point
+    # ======================================
+
+    def draw_point(self, x, y):
+
+        pixel_x = x * GRID_SIZE
+        pixel_y = y * GRID_SIZE
+
+        radius = 4
+
+        return self.canvas.create_oval(
+            pixel_x - radius,
+            pixel_y - radius,
+            pixel_x + radius,
+            pixel_y + radius,
+            fill="red",
+            outline="red"
+        )
+
+    # ======================================
+# Player Movement
+# ======================================
+
+    def move_player(self, event):
+
+        x, y = self.player_position
+
+        if event.keysym == "Up":
+            y -= 1
+
+        elif event.keysym == "Down":
+            y += 1
+
+        elif event.keysym == "Left":
+            x -= 1
+
+        elif event.keysym == "Right":
+            x += 1
+
+        # Keep player inside the map
+        x = max(0, min(x, WINDOW_WIDTH // GRID_SIZE - 1))
+        y = max(0, min(y, WINDOW_HEIGHT // GRID_SIZE - 1))
+
+        # Update player position
+        self.player_position = (x, y)
+
+        # Redraw player
+        self.draw_player()
+
+        print(f"Player position: {self.player_position}")
+        # ======================================
+        # Draw Wall
+        # ======================================
+
+    def draw_wall(self, start, end):
+
+        x0, y0 = start
+        x1, y1 = end
+
+        return self.canvas.create_line(
+            x0 * GRID_SIZE,
+            y0 * GRID_SIZE,
+            x1 * GRID_SIZE,
+            y1 * GRID_SIZE,
             fill="black",
             width=3
         )
 
-        # Save the wall coordinates
-        walls.append(((x0, y0), (x, y)))
+    # ======================================
+    # Draw Player
+    # ======================================
 
-        print(f"Wall created: {walls[-1]}")
+    def draw_player(self):
+        # Remove old player graphics
+        if self.player_id is not None:
+            self.canvas.delete(self.player_id)
 
-        # Use the endpoint as the start of the next wall
-        start_point = (x, y)
-def undo_wall(event=None):
-    global start_point
+        if self.direction_id is not None:
+            self.canvas.delete(self.direction_id)
 
-    if not walls:
-        print("No walls to undo")
-        return
+        # Convert grid coordinates to pixels
+        x, y = self.player_position
+        px = x * GRID_SIZE
+        py = y * GRID_SIZE
 
-    # Remove the most recently created wall
-    x0, y0, wall_id = walls.pop()
+        # Draw blue player dot
+        radius = 6
+        self.player_id = self.canvas.create_oval(
+            px - radius,
+            py - radius,
+            px + radius,
+            py + radius,
+            fill="blue",
+            outline="white",
+            width=2
+        )
 
-    # Delete the wall from the Canvas
-    canvas.delete(wall_id)
+        # Draw direction arrow
+        angle = math.radians(self.player_angle)
+        length = 25
 
-    # Stop the current wall chain
-    start_point = None
+        end_x = px + math.sin(angle) * length
+        end_y = py - math.cos(angle) * length
 
-    print(f"Undo wall: {x0} -> {y0}")
-# Connect mouse clicks to the function
-canvas.bind("<Button-1>", on_click)
+        self.direction_id = self.canvas.create_line(
+            px, py,
+            end_x, end_y,
+            fill="blue",
+            width=3,
+            arrow=tk.LAST
+        )
 
-# Support right-click on different platforms
-canvas.bind("<Button-2>", stop_drawing)
-canvas.bind("<Button-3>", stop_drawing)
+        # Keep player visible above walls
+        self.canvas.tag_raise(self.player_id)
+        self.canvas.tag_raise(self.direction_id)
+    # ======================================
+    # Left Click: Add Point / Wall
+    # ======================================
 
-# Support Control + left-click on macOS
-canvas.bind("<Control-Button-1>", stop_drawing)
-root.bind("<Command-z>", undo_wall)
-root.mainloop()
+    def on_click(self, event):
+
+        # Ignore Control + left click
+        if event.state & 0x0004:
+            return
+
+        point = self.snap_to_grid(event.x, event.y)
+
+        # Start a new group
+        if self.current_group is None:
+
+            group = WallGroup()
+
+            self.groups.append(group)
+            self.current_group = group
+
+        else:
+            group = self.current_group
+
+        # Prevent duplicate consecutive points
+        if group.points and group.points[-1] == point:
+            return
+
+        # Draw wall from previous point
+        if group.points:
+
+            previous_point = group.points[-1]
+
+            wall_id = self.draw_wall(previous_point, point)
+
+            group.wall_ids.append(wall_id)
+
+        # Draw and store point
+        point_id = self.draw_point(*point)
+
+        group.points.append(point)
+        group.point_ids.append(point_id)
+
+        print(f"Point added: {point}")
+
+
+    # ======================================
+    # Right Click: End Wall Group
+    # ======================================
+
+    def stop_drawing(self, event=None):
+
+        self.current_group = None
+
+        print("Wall group ended")
+
+
+    # ======================================
+    # Command + Z: Undo
+    # ======================================
+
+    def undo(self, event=None):
+
+        if not self.groups:
+            print("Nothing to undo")
+            return
+
+        # Get most recent group
+        group = self.groups[-1]
+
+        # Delete last point
+        if group.point_ids:
+
+            point_id = group.point_ids.pop()
+            self.canvas.delete(point_id)
+
+            group.points.pop()
+
+        # Delete last wall
+        if group.wall_ids:
+
+            wall_id = group.wall_ids.pop()
+            self.canvas.delete(wall_id)
+
+        # Remove group if empty
+        if not group.points:
+
+            self.groups.pop()
+            self.current_group = None
+
+            print("Wall group removed")
+
+        else:
+            # Continue drawing from the last remaining point
+            self.current_group = group
+
+            print("Undo completed")
+
+
+# ==========================================
+# Main
+# ==========================================
+
+if __name__ == "__main__":
+
+    root = tk.Tk()
+
+    editor = MapEditor(root)
+
+    root.mainloop()
