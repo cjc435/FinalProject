@@ -253,6 +253,8 @@ static PT_THREAD (protothread_render(struct pt *pt))
     init_wall(&wall[2], -1, 10, 1, 10); // Initialize wall with coordinates
     init_wall(&wall[3], 1, 10, 1, 5); // Initialize wall with coordinates
 
+    // init_wall(&wall[0], 10, 0, 10, 1); // Initialize wall with coordinates
+
     sector_t sector;
     sector.NumWalls = 1;
     sector.floor = 0;
