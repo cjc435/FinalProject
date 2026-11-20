@@ -1,3 +1,4 @@
+
 /**
  * Hunter Adams (vha3@cornell.edu)
  * 
@@ -255,7 +256,7 @@ static PT_THREAD (protothread_render(struct pt *pt))
     // init_wall(&wall[0], 10, 0, 10, 1); // Initialize wall with coordinates
 
     sector_t sector;
-    sector.NumWalls = 1;
+    sector.NumWalls = 4;
     sector.floor = 0;
     sector.celing = 1;
     sector.wall[0] = wall[0];
@@ -280,7 +281,8 @@ static PT_THREAD (protothread_render(struct pt *pt))
         RenderWall(TranslatedWall, floor, ceiling); // Render the wall with floor and ceiling heights
       }
 
-     // NEVER exit while
+        // GuideMap
+        GuideMap(wall, sector.NumWalls);
     } // END WHILE(1)
   PT_END(pt);
 } // animation thread
@@ -295,7 +297,7 @@ static PT_THREAD (protothread_render(struct pt *pt))
 #define MAP_CENTER_X (MAP_X + MAP_SIZE/2)
 #define MAP_CENTER_Y (MAP_Y + MAP_SIZE/2)
 #define MAP_SCALE 10
-
+/*
 // GuideMap Line Clip
 #define LEFT   1
 #define RIGHT  2
@@ -363,14 +365,10 @@ int ClipLine(int *x0, int *y0, int *x1, int *y1) {
         }
     }
 }
-
+*/
 void GuideMap(wall_t wall[], int numWalls) {
 
     int sx[2], sy[2];
-
-    // Draw GuideMap boundary
-    drawRect(MAP_X, MAP_Y,
-             MAP_SIZE, MAP_SIZE, WHITE);
 
     // Draw walls
     for (int i = 0; i < numWalls; i++) {
@@ -389,6 +387,10 @@ void GuideMap(wall_t wall[], int numWalls) {
             drawLine(sx[0], sy[0], sx[1], sy[1], WHITE);
         }
     }
+
+    // Draw GuideMap boundary
+    drawRect(MAP_X, MAP_Y,
+             MAP_SIZE, MAP_SIZE, WHITE);
 
     // Draw Player
     fillCircle(MAP_CENTER_X,
