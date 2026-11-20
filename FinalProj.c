@@ -360,58 +360,67 @@ static PT_THREAD (protothread_keypad(struct pt *pt))
       // Post the current keypressed to a global
       CurrentKeyPressed = (DebounceState != NotPressed) ? PotentialKeypress : -1;
 
+      // =================================
+      // Keypad Player Movement
+      // =================================
+      float movement = 1;
 
-      PT_YIELD_usec(30000) ;
+        switch (CurrentKeyPressed) {
+            // Forward
+            case 2:
+              player.x += sin_lut[player.angle] * movement;
+              player.y += cos_lut[player.angle] * movement;
+              break;
+
+            // Backward
+            case 5:
+              player.x -= sin_lut[player.angle] * movement;
+              player.y -= cos_lut[player.angle] * movement;
+              break;
+
+            // Strafe Left
+            case 4:
+              player.x -= cos_lut[player.angle] * movement;
+              player.y += sin_lut[player.angle] * movement;
+              break;
+
+            // Strafe Right
+            case 6:
+              player.x += cos_lut[player.angle] * movement;
+              player.y -= sin_lut[player.angle] * movement;
+              break;
+
+            // Fly Up
+            case 7:
+              player.height += movement;
+              break;
+
+            // Fly Down
+            case 8:
+              player.height -= movement;
+              break;
+
+            // Rotate Left  
+            case 1:
+              player.angle -= 5;
+              break;
+
+            // Rotate Right
+            case 3:
+              player.angle += 5;
+              break;
+
+            default:
+              break;
+        }
+
+
+      PT_YIELD_usec(100000) ;    //30000
     }
     // Indicate thread end
     PT_END(pt) ;
 }
 
-
-// ==================================================
-// === Player Movement Thread
-// ==================================================
-static PT_THREAD (protothread_player(struct pt *pt))
-{
-    // Mark beginning of thread
-    PT_BEGIN(pt);
-
-    // Player movement speed
-    float move_speed = 1.0f;
-
-    while(1) {
-      // Wait until the keypressed in not invalid
-      PT_YIELD_UNTIL(pt, (CurrentKeyPressed != -1)) ;
-
-      // =================================
-      // Keypad Player Movement
-      // =================================
-
-      // 2 Move Forward
-      if (CurrentKeyPressed == 1) {
-          player.x += cosf(player.angle) * move_speed;
-          player.y += sinf(player.angle) * move_speed;
-      }
-      // 4 Turn Left
-      else if (CurrentKeyPressed == 3) {
-          player.x += cosf(player.angle) * move_speed;
-          player.y -= sinf(player.angle) * move_speed;
-      }
-      // 5 move backward
-      else if (CurrentKeyPressed == 4) {
-          player.x -= cosf(player.angle) * move_speed;
-          player.y -= sinf(player.angle) * move_speed;
-      }
-      // 6 Turn Right
-      else if (CurrentKeyPressed == 5) {
-          player.x -= cosf(player.angle) * move_speed;
-          player.y += sinf(player.angle) * move_speed;
-
-      }
-
-    } // END WHILE(1)
-  PT_END(pt);
-} 
 
 
 // User input thread. User can change draw speed
@@ -486,8 +495,7 @@ static PT_THREAD (protothread_serial(struct pt *pt))
 // ========================================
 void core1_main(){
   // Add animation thread
-  // pt_add_thread(protothread_keypad) ;
-  // pt_add_thread(protothread_player) ;
+  pt_add_thread(protothread_keypad) ;
 
   // DEBUG PROTOTHREAD
   pt_add_thread(protothread_serial) ;
