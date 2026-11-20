@@ -188,14 +188,14 @@ wall_t WorldTranslation(player_t player, wall_t wall) {
   return TranslatedWall;  
 }
 
-int ConvertHorizontalFovToScreen(int x) {
-  int screen_point = (int)(x + (((float)VGA_WIDTH-1.0)/2.0));
-  return screen_point;
+void ConvertHorizontalFovToScreen(int *x) {
+  *x = (int)(*x + ((VGA_WIDTH-1.0)/2.0));
+  return;
 }
 
-int ConvertVerticalFovToScreen(int y) {
-  int screen_point = (int)(-y + (((float)VGA_HEIGHT-1.0)/2.0));
-  return screen_point;
+void ConvertVerticalFovToScreen(int *y) {
+  *y = (int)((-(*y)) + ((VGA_HEIGHT-1.0)/2.0));
+  return;
 }
 
 
@@ -233,12 +233,12 @@ void Render(wall_t wall, float FloorHeight, float CeilHeight) {
   // Convert new 3D coordinates to 2D screen coordinates
   // Screen goes from 0 -> 640 in x and 0 -> 480 in y
 
-  x[0]      = ConvertHorizontalFovToScreen  (x[0]);
-  x[1]      = ConvertHorizontalFovToScreen  (x[1]);
-  yFloor[0] = ConvertVerticalFovToScreen    (yFloor[0]);
-  yFloor[1] = ConvertVerticalFovToScreen    (yFloor[1]);
-  yCeil[0]  = ConvertVerticalFovToScreen    (yCeil[0]);
-  yCeil[1]  = ConvertVerticalFovToScreen    (yCeil[1]);
+  ConvertHorizontalFovToScreen  (&x[0]);
+  ConvertHorizontalFovToScreen  (&x[1]);
+  ConvertVerticalFovToScreen    (&yFloor[0]);
+  ConvertVerticalFovToScreen    (&yFloor[1]);
+  ConvertVerticalFovToScreen    (&yCeil[0]);
+  ConvertVerticalFovToScreen    (&yCeil[1]);
 
   // drawPixel((short)x[0], (short)yFloor[0], WHITE);
   // drawPixel((short)x[0], (short)yCeil[0], WHITE);
