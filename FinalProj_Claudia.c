@@ -1,3 +1,26 @@
+
+/**
+ * Hunter Adams (vha3@cornell.edu)
+ * 
+ * This demonstration animates two balls bouncing about the screen.
+ * Through a serial interface, the user can change the ball color.
+ *
+ * HARDWARE CONNECTIONS
+  - GPIO 16 ---> VGA Hsync
+  - GPIO 17 ---> VGA Vsync
+  - GPIO 18 ---> VGA Green lo-bit --> 470 ohm resistor --> VGA_Green
+  - GPIO 19 ---> VGA Green hi_bit --> 330 ohm resistor --> VGA_Green
+  - GPIO 20 ---> 330 ohm resistor ---> VGA-Blue
+  - GPIO 21 ---> 330 ohm resistor ---> VGA-Red
+  - RP2040 GND ---> VGA-GND
+ *
+ * RESOURCES USED
+ *  - PIO state machines 0, 1, and 2 on PIO instance 0
+ *  - DMA channels (2, by claim mechanism)
+ *  - 153.6 kBytes of RAM (for pixel color data)
+ *
+ */
+
 // Include the VGA grahics library
 #include "VGA/vga16_graphics_v3.h"
 // Include standard libraries
@@ -43,7 +66,8 @@ typedef struct {vector2d_t location; uint8_t angle;} player_t;
 #define BASE_KEYPAD_PIN 9
 #define KEYROWS         4
 #define NUMKEYS         12
-player_t player;
+
+
 // Global Variables //
 
 // Keypad
@@ -54,6 +78,7 @@ unsigned int scancodes[KEYROWS] = {   0xE, 0xD, 0xB, 0x7} ;
 unsigned int button = 0x70 ;
 
 int CurrentKeyPressed = -1;
+int ScannedKey = -1;
 bool KeystrokeTriggered = 0;
 
 enum DebouncerState {
@@ -62,7 +87,7 @@ enum DebouncerState {
   Pressed,
   MaybeNotPressed
 };
-enum DebouncerState DebounceState = NotPressed;
+enum DebouncerState DebounceState = NotPressed;  // $$$$$$$$$
 
 // VGA
 char color = WHITE ;
@@ -73,6 +98,8 @@ char color = WHITE ;
 
 // Renderer
 
+uint8_t FOV = 90; // Convert to binary angular measurement (BAM)
+float AspectRatio = VGA_WIDTH/VGA_HEIGHT; // 4:3 aspect ratio
 
 // Functions // 
 
@@ -89,15 +116,70 @@ void WorldTranslation(player_t *player, wall_t *wall) {
 
 }
 
-void RenderWall(wall_t *wall) {
-  int16_t x0 = wall->x0.x / wall->x0.y;
-  int16_t x1 = wall->x1.x / wall->x1.y;
-
+void RenderWall(wall_t *wall, uint16_t FloorHeight, uint16_t CeilHeight) {
   const uint16_t ScreenMidWidth = VGA_WIDTH/2;
   const uint16_t ScreenMidHeight = VGA_HEIGHT/2;
 
-  // drawPixel();
+  // Convert 2D coordinates to player's projection view
+  int16_t x0 = wall->x0.x / wall->x0.y;
+  int16_t x1 = wall->x1.x / wall->x1.y;
+  int16_t y0 = (FloorHeight / wall->x0.y);
+  int16_t y1 = (FloorHeight / wall->x1.y);
 
+  // Convert new 3D coordinates to 2D screen coordinates
+  // "Wall" coordinates are from -2^15 -> 2^15-1 in x and y (–32,768 to 32,767)
+  // Screen goes from 0 -> 640 in x and 0 -> 480 in y
+  // Steps:
+  // Convert wall coordinates from (–32,768 to 32,767) to (0 to 65,535) (both x and y)
+  // Convert divide by 65,535 
+
+  drawPixel(x0, y0, WHITE);
+  drawPixel(x1, y1, WHITE);
+}
+
+// ==================================================
+// === Keypad thread 
+// ==================================================
+// This thread runs on core 0
+static PT_THREAD (protothread_keypad_scan(struct pt *pt))
+{
+    static int i;
+    static uint32_t keypad;
+
+    PT_BEGIN(pt);
+
+    // Default: no key pressed
+    ScannedKey = -1;
+
+    // Scan keypad rows
+    for (i = 0; i < KEYROWS; i++) {
+
+        gpio_put_masked(
+            (0xF << BASE_KEYPAD_PIN),
+            (scancodes[i] << BASE_KEYPAD_PIN)
+        );
+
+        sleep_us(1);
+
+        keypad = ((gpio_get_all() >> BASE_KEYPAD_PIN) & 0x7F);
+
+        if ((~keypad) & button) {
+            break;
+        }
+    }
+
+    // Identify pressed key
+    if ((~keypad) & button) {
+
+        for (i = 0; i < NUMKEYS; i++) {
+            if (keypad == keycodes[i]) {
+                ScannedKey = i;
+                break;
+            }
+        }
+    }
+
+    PT_END(pt);
 }
 
 // ==================================================
@@ -106,39 +188,19 @@ void RenderWall(wall_t *wall) {
 // This thread runs on core 0
 static PT_THREAD (protothread_keypad(struct pt *pt))
 {
+    static struct pt pt_scan;
     static int i;
-    static uint32_t keypad;
     static int PotentialKeypress = -1;
 
     PT_BEGIN(pt);
 
     while (1) {
 
-        // Scan keypad
-        for (i = 0; i < KEYROWS; i++) {
-            gpio_put_masked(
-                (0xF << BASE_KEYPAD_PIN),
-                (scancodes[i] << BASE_KEYPAD_PIN)
-            );
+        // Run keypad scan child thread
+        PT_SPAWN(pt, &pt_scan, protothread_keypad_scan(&pt_scan));
 
-            sleep_us(1);
-
-            keypad = ((gpio_get_all() >> BASE_KEYPAD_PIN) & 0x7F);
-
-            if ((~keypad) & button) break;
-        }
-
-        // Find pressed key
-        if ((~keypad) & button) {
-            for (i = 0; i < NUMKEYS; i++) {
-                if (keypad == keycodes[i]) break;
-            }
-
-            if (i == NUMKEYS) i = -1;
-        }
-        else {
-            i = -1;
-        }
+        // Get scanning result
+        i = ScannedKey;
 
         // Debouncing State Machine
         switch (DebounceState) {
@@ -177,7 +239,7 @@ static PT_THREAD (protothread_keypad(struct pt *pt))
         // Trigger once when key is confirmed pressed
         KeystrokeTriggered =
             (DebounceState == Pressed &&
-             i == PotentialKeypress) ? 1 : 0;
+             i == PotentialKeypress) ? 1 : 0;  // $$$$$$$$$
 
         PT_YIELD_usec(30000);
     }
@@ -193,6 +255,10 @@ static PT_THREAD (protothread_render(struct pt *pt))
 
     // Render setup
 
+    player_t player;
+    player.location.x = 0;
+    player.location.y = 0;
+    player.angle = 0;
     
     wall_t wall;
     wall.x0.x = -10;
@@ -208,69 +274,14 @@ static PT_THREAD (protothread_render(struct pt *pt))
       // Translate the wall around the player. Returns wall transformations
       WorldTranslation(&player, &wall);
       
-      RenderWall(&wall);
+      RenderWall(&wall, 15, 20);
 
 
      // NEVER exit while
     } // END WHILE(1)
   PT_END(pt);
-}
-// animation thread
+} // animation thread
 
-
-// ==================================================
-// === Player Movement Thread
-// ==================================================
-static PT_THREAD (protothread_player(struct pt *pt))
-{
-    // Mark beginning of thread
-    PT_BEGIN(pt);
-
-    // Player movement speed
-    float move_speed = 1.0f;
-
-    while(1) {
-    // Wait for the signal that the buffer's changed
-        PT_YIELD_UNTIL(pt, KeystrokeTriggered) ;
-
-        // press
-        // check key is pressed
-        // reset the value
-        // at the end do a wait
-
-        // =================================
-        // Keypad Player Movement
-        // =================================
-
-        // 2 Move Forward
-        if (CurrentKeyPressed == 1) {
-            player.location.x += cosf(player.angle) * move_speed;
-            player.location.y += sinf(player.angle) * move_speed;
-        }
-        // 4 Turn Left
-        else if (CurrentKeyPressed == 3) {
-            player.location.x += cosf(player.angle) * move_speed;
-            player.location.y -= sinf(player.angle) * move_speed;
-        }
-        // 5 move backward
-       else if (CurrentKeyPressed == 4) {
-            player.location.x -= cosf(player.angle) * move_speed;
-            player.location.y -= sinf(player.angle) * move_speed;
-        }
-        // 6 Turn Right
-        else if (CurrentKeyPressed == 5) {
-            player.location.x -= cosf(player.angle) * move_speed;
-            player.location.y += sinf(player.angle) * move_speed;
-
-      }
-      CurrentKeyPressed = -1; // Reset the value
-      PT_YIELD_usec(30000) ;
-      // Reset the value
-      KeystrokeTriggered = 0;
-
-    } // END WHILE(1)
-  PT_END(pt);
-} 
 
 // ========================================
 // === core 1 main -- started in main below
@@ -278,7 +289,6 @@ static PT_THREAD (protothread_player(struct pt *pt))
 void core1_main(){
   // Add animation thread
   pt_add_thread(protothread_keypad) ;
-  pt_add_thread(protothread_player) ;
   // Start the scheduler
   pt_schedule_start ;
 
@@ -304,17 +314,17 @@ int main(){
   ////////////////// KEYPAD INITS ///////////////////////
   // Initialize the keypad GPIO's
   gpio_init_mask((0x7F << BASE_KEYPAD_PIN)) ;
-  gpio_set_dir((BASE_KEYPAD_PIN), GPIO_IN);
-  gpio_set_dir((BASE_KEYPAD_PIN+1), GPIO_IN);
-  gpio_set_dir((BASE_KEYPAD_PIN+2), GPIO_IN);
+  gpio_set_dir((BASE_KEYPAD_PIN+4), GPIO_IN);
+  gpio_set_dir((BASE_KEYPAD_PIN+5), GPIO_IN);
+  gpio_set_dir((BASE_KEYPAD_PIN+6), GPIO_IN);
   // Set row-pins to output
   gpio_set_dir_out_masked((0xF << BASE_KEYPAD_PIN)) ;
   // Set all output pins to low
   gpio_put_masked((0xF << BASE_KEYPAD_PIN), (0xF << BASE_KEYPAD_PIN)) ;
   // Turn on pulldown resistors for column pins (on by default)
-  gpio_pull_up((BASE_KEYPAD_PIN)) ;
-  gpio_pull_up((BASE_KEYPAD_PIN+1)) ;
-  gpio_pull_up((BASE_KEYPAD_PIN+2)) ;
+  gpio_pull_up((BASE_KEYPAD_PIN+4)) ;
+  gpio_pull_up((BASE_KEYPAD_PIN+5)) ;
+  gpio_pull_up((BASE_KEYPAD_PIN+6)) ;
 
 
   // start core 1 
