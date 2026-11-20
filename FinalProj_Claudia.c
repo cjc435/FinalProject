@@ -231,7 +231,124 @@ void RenderWall(wall_t wall, float FloorHeight, float CeilHeight) {
 }
 
 
-// Protothreads //
+
+// ==================================================
+// === GuideMap
+// ==================================================
+#define MAP_X 10
+#define MAP_Y 10
+#define MAP_WIDTH  150
+#define MAP_HEIGHT 100
+
+#define MAP_CENTER_X (MAP_X + MAP_WIDTH/2)
+#define MAP_CENTER_Y (MAP_Y + MAP_HEIGHT/2)
+
+#define MAP_SCALE 10
+
+// GuideMap Line Clip
+#define LEFT   1
+#define RIGHT  2
+#define BOTTOM 4
+#define TOP    8
+
+int Clip(float x, float y) {
+
+    int code = 0;
+
+    if (x < MAP_X) code |= LEFT;
+    else if (x > MAP_X + MAP_WIDTH) code |= RIGHT;
+
+    if (y < MAP_Y) code |= TOP;
+    else if (y > MAP_Y + MAP_HEIGHT) code |= BOTTOM;
+
+    return code;
+}
+
+int ClipLine(int *x0, int *y0, int *x1, int *y1) {
+
+    int code0 = Clip(*x0, *y0);
+    int code1 = Clip(*x1, *y1);
+
+    while (1) {
+
+        if (!(code0 | code1)) return 1;
+
+        if (code0 & code1) return 0;
+
+        int codeOut = code0 ? code0 : code1;
+
+        float x, y;
+
+        if (codeOut & TOP) {
+            x = *x0 + (*x1 - *x0) *
+                (MAP_Y - *y0) / (*y1 - *y0);
+            y = MAP_Y;
+        }
+        else if (codeOut & BOTTOM) {
+            x = *x0 + (*x1 - *x0) *
+                (MAP_Y + MAP_HEIGHT - *y0) / (*y1 - *y0);
+            y = MAP_Y + MAP_HEIGHT;
+        }
+        else if (codeOut & RIGHT) {
+            y = *y0 + (*y1 - *y0) *
+                (MAP_X + MAP_WIDTH - *x0) / (*x1 - *x0);
+            x = MAP_X + MAP_WIDTH;
+        }
+        else {
+            y = *y0 + (*y1 - *y0) *
+                (MAP_X - *x0) / (*x1 - *x0);
+            x = MAP_X;
+        }
+
+        if (codeOut == code0) {
+            *x0 = (int)x;
+            *y0 = (int)y;
+            code0 = Clip(*x0, *y0);
+        }
+        else {
+            *x1 = (int)x;
+            *y1 = (int)y;
+            code1 = Clip(*x1, *y1);
+        }
+    }
+}
+*/
+void GuideMap(wall_t wall[], int numWalls) {
+
+    int sx[2], sy[2];
+
+    // Draw walls
+    for (int i = 0; i < numWalls; i++) {
+
+        for (int j = 0; j < 2; j++) {
+
+            float dx = wall[i].x[j] - player.x;
+            float dy = wall[i].y[j] - player.y;
+            
+            // Rotate
+            float rx = dx * cos_lut[player.angle] - dy * sin_lut[player.angle];
+            float ry = dx * sin_lut[player.angle] + dy * cos_lut[player.angle];
+
+            sx[j] = MAP_CENTER_X + rx * MAP_SCALE;
+            sy[j] = MAP_CENTER_Y - ry * MAP_SCALE;
+        }
+
+        // Clip wall to GuideMap boundary
+        if (ClipLine(&sx[0], &sy[0], &sx[1], &sy[1])) {
+            drawLine(sx[0], sy[0], sx[1], sy[1], WHITE);
+        }
+    }
+
+    // Draw GuideMap boundary
+    drawRect(MAP_X, MAP_Y,
+             MAP_WIDTH, MAP_HEIGHT, WHITE);
+
+    // Draw Player
+    fillCircle(MAP_CENTER_X,
+               MAP_CENTER_Y, 2, RED);
+}
+
+// Protothreads
 
 // Rendering on core 0
 static PT_THREAD (protothread_render(struct pt *pt))
@@ -281,122 +398,27 @@ static PT_THREAD (protothread_render(struct pt *pt))
         RenderWall(TranslatedWall, floor, ceiling); // Render the wall with floor and ceiling heights
       }
 
-        // GuideMap
-        GuideMap(wall, sector.NumWalls);
     } // END WHILE(1)
   PT_END(pt);
 } // animation thread
 
 
 // ==================================================
-// === GuideMap
+// === GuideMap Thread
 // ==================================================
-#define MAP_X 10
-#define MAP_Y 10
-#define MAP_SIZE 150
-#define MAP_CENTER_X (MAP_X + MAP_SIZE/2)
-#define MAP_CENTER_Y (MAP_Y + MAP_SIZE/2)
-#define MAP_SCALE 10
-/*
-// GuideMap Line Clip
-#define LEFT   1
-#define RIGHT  2
-#define BOTTOM 4
-#define TOP    8
-
-int Clip(float x, float y) {
-
-    int code = 0;
-
-    if (x < MAP_X) code |= LEFT;
-    else if (x > MAP_X + MAP_SIZE) code |= RIGHT;
-
-    if (y < MAP_Y) code |= TOP;
-    else if (y > MAP_Y + MAP_SIZE) code |= BOTTOM;
-
-    return code;
-}
-
-int ClipLine(int *x0, int *y0, int *x1, int *y1) {
-
-    int code0 = Clip(*x0, *y0);
-    int code1 = Clip(*x1, *y1);
+static PT_THREAD (protothread_guideMap(struct pt *pt))
+{
+    PT_BEGIN(pt);
 
     while (1) {
 
-        if (!(code0 | code1)) return 1;
+        PT_YIELD_UNTIL(pt, draw_start_signal());
 
-        if (code0 & code1) return 0;
-
-        int codeOut = code0 ? code0 : code1;
-
-        float x, y;
-
-        if (codeOut & TOP) {
-            x = *x0 + (*x1 - *x0) *
-                (MAP_Y - *y0) / (*y1 - *y0);
-            y = MAP_Y;
-        }
-        else if (codeOut & BOTTOM) {
-            x = *x0 + (*x1 - *x0) *
-                (MAP_Y + MAP_SIZE - *y0) / (*y1 - *y0);
-            y = MAP_Y + MAP_SIZE;
-        }
-        else if (codeOut & RIGHT) {
-            y = *y0 + (*y1 - *y0) *
-                (MAP_X + MAP_SIZE - *x0) / (*x1 - *x0);
-            x = MAP_X + MAP_SIZE;
-        }
-        else {
-            y = *y0 + (*y1 - *y0) *
-                (MAP_X - *x0) / (*x1 - *x0);
-            x = MAP_X;
-        }
-
-        if (codeOut == code0) {
-            *x0 = (int)x;
-            *y0 = (int)y;
-            code0 = Clip(*x0, *y0);
-        }
-        else {
-            *x1 = (int)x;
-            *y1 = (int)y;
-            code1 = Clip(*x1, *y1);
-        }
-    }
-}
-*/
-void GuideMap(wall_t wall[], int numWalls) {
-
-    int sx[2], sy[2];
-
-    // Draw walls
-    for (int i = 0; i < numWalls; i++) {
-
-        for (int j = 0; j < 2; j++) {
-
-            float dx = wall[i].x[j] - player.x;
-            float dy = wall[i].y[j] - player.y;
-
-            sx[j] = MAP_CENTER_X + dx * MAP_SCALE;
-            sy[j] = MAP_CENTER_Y - dy * MAP_SCALE;
-        }
-
-        // Clip wall to GuideMap boundary
-        if (ClipLine(&sx[0], &sy[0], &sx[1], &sy[1])) {
-            drawLine(sx[0], sy[0], sx[1], sy[1], WHITE);
-        }
+        GuideMap(wall, sector.NumWalls);
     }
 
-    // Draw GuideMap boundary
-    drawRect(MAP_X, MAP_Y,
-             MAP_SIZE, MAP_SIZE, WHITE);
-
-    // Draw Player
-    fillCircle(MAP_CENTER_X,
-               MAP_CENTER_Y, 2, RED);
+    PT_END(pt);
 }
-
 
 // ==================================================
 // === Keypad thread 
@@ -605,6 +627,7 @@ static PT_THREAD (protothread_serial(struct pt *pt))
 void core1_main(){
   // Add animation thread
   pt_add_thread(protothread_keypad) ;
+  pt_add_thread(protothread_guideMap);
 
   // DEBUG PROTOTHREAD
   pt_add_thread(protothread_serial) ;
