@@ -54,8 +54,8 @@ typedef signed int fix15 ;
 
 
 typedef struct {float x; float y;} vector2d_t;
-typedef struct {float x[2]; float y[2];} wall_t;
-typedef struct {wall_t wall[4]; int NumWalls; float floor; float celing; } sector_t;
+typedef struct {float x[2]; float y[2]; bool isPortal} wall_t;
+typedef struct {wall_t wall[8]; int NumWalls; float floor; float celing; } sector_t;
 typedef struct {float x; float y; float height; uint8_t angle;} player_t;
 player_t player;
 
@@ -123,7 +123,7 @@ void init_lookup_tables(void) {
         cos_lut[i] = cosf(radians);
     }
 }
-uint8_t float_to_bam(float angle) {
+uint8_t angle_to_bam(float angle) {
     // Normalize angle to [0, 360)
     while (angle < 0.0f)
         angle += 360.0f;
@@ -134,6 +134,10 @@ uint8_t float_to_bam(float angle) {
     int index = (int)angle;
 
     return degree_to_bam[index];
+}
+
+float bam_to_angle(uint8_t angle) {
+  return (float)angle * (360.0 / 256.0); 
 }
 
 
@@ -192,12 +196,26 @@ int ConvertVerticalFovToScreen(int y) {
 }
 
 
-void RenderWall(wall_t wall, float FloorHeight, float CeilHeight) {
+void Render(wall_t wall, float FloorHeight, float CeilHeight) {
   int x[2];
   int yFloor[2];
   int yCeil[2];
 
   const float d = VGA_WIDTH/2; // See https://sunshine2k.de/articles/algorithm/camperspscreentransform/simplisticcameraperspectivescreentransform.html
+
+  // Translate the wall around the player. Returns wall transformations
+  wall = WorldTranslation(player, wall);
+
+  // If the wall is behind the player, ignore completely
+  if(wall.y[0] < 0 && wall.y[1] < 0) {
+    return;
+  // If half the wall is behind the player, clip to the respective edge
+  } else if (wall.y[0] < 0) {
+
+  } else if (wall.y[1] < 0) {
+
+  }
+
 
   // Convert 2D coordinates to player's projection view
   x[0] = wall.x[0] * d / wall.y[0];
@@ -272,14 +290,17 @@ static PT_THREAD (protothread_render(struct pt *pt))
       clearLowFrame(0, BLACK);
 
       for (int i=0; i<sector.NumWalls; i++) {
-        // Translate the wall around the player. Returns wall transformations
-        TranslatedWall = WorldTranslation(player, wall[i]);
-
         float floor =   sector.floor - player.height;
         float ceiling = sector.celing - player.height;
-        
-        RenderWall(TranslatedWall, floor, ceiling); // Render the wall with floor and ceiling heights
+        Render(wall[i], floor, ceiling); // Render the wall with floor and ceiling heights
+
+        // Keep track of vertical lines drawn and don't redraw over them
       }
+
+      static char AngleStr[32];
+      snprintf(AngleStr, sizeof(int), "%d", (int)bam_to_angle(player.angle));        
+      drawTextGLCD(10, 10, "Angle:", WHITE, BLACK);
+      drawTextGLCD(10, 20, AngleStr, WHITE, BLACK);
 
      // NEVER exit while
     } // END WHILE(1)
@@ -292,7 +313,7 @@ static PT_THREAD (protothread_render(struct pt *pt))
 // ==================================================
 // === Keypad thread 
 // ==================================================
-// This thread runs on core 0
+// This thread runs on core 1. Controls player movements via keypad
 static PT_THREAD (protothread_keypad(struct pt *pt))
 {
     // Indicate thread beginning
@@ -422,8 +443,10 @@ static PT_THREAD (protothread_keypad(struct pt *pt))
 }
 
 
-
-// User input thread. User can change draw speed
+// ==================================================
+// === Serial thread 
+// ==================================================
+// This thread runs on core 1. Controls player movements via serial terminal for debug
 static PT_THREAD (protothread_serial(struct pt *pt))
 {
     PT_BEGIN(pt) ;
@@ -494,14 +517,12 @@ static PT_THREAD (protothread_serial(struct pt *pt))
 // === core 1 main -- started in main below
 // ========================================
 void core1_main(){
-  // Add animation thread
+  // Add keypad movement thread
   pt_add_thread(protothread_keypad) ;
-
   // DEBUG PROTOTHREAD
   pt_add_thread(protothread_serial) ;
   // Start the scheduler
   pt_schedule_start ;
-
 }
 
 // ========================================
