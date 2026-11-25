@@ -41,6 +41,41 @@
 // Include protothreads
 #include "pt_cornell_rp2040_v1_4.h"
 
+// Screen width/height
+#define VGA_WIDTH 640
+#define VGA_HEIGHT 480
+
+// Binary Angular Measurement (BAM)
+#define BAM_SIZE 256
+#define DEG_SIZE 360
+#define PI 3.14159265358979323846f
+
+// LED
+#define LED_PIN 25
+
+// Keypad pin configurations
+#define BASE_KEYPAD_PIN 9
+#define KEYROWS         4
+#define NUMKEYS         12
+
+// Mini map
+#define MAP_X 10
+#define MAP_Y 10
+#define MAP_WIDTH  150
+#define MAP_HEIGHT 100
+
+#define MAP_CENTER_X (MAP_X + MAP_WIDTH/2)
+#define MAP_CENTER_Y (MAP_Y + MAP_HEIGHT/2)
+
+#define MAP_SCALE 10
+
+// Minimap Line Clip
+#define LEFT   1
+#define RIGHT  2
+#define BOTTOM 4
+#define TOP    8
+
+
 // === the fixed point macros ========================================
 typedef signed int fix15 ;
 #define multfix15(a,b) ((fix15)((((signed long long)(a))*((signed long long)(b)))>>15))
@@ -53,23 +88,14 @@ typedef signed int fix15 ;
 #define divfix(a,b) (fix15)(div_s64s64( (((signed long long)(a)) << 15), ((signed long long)(b))))
 
 
+// Typedefs
 typedef struct {float x; float y;} vector2d_t;
 typedef struct {vector2d_t v1; vector2d_t v2; bool isPortal;} wall_t;
 typedef struct {wall_t wall[8]; int NumWalls; float floor; float celing; } sector_t;
 typedef struct {float x; float y; float height; uint8_t angle;} player_t;
-player_t player;
 
 
 // typedef struct {int NumWalls; int floor; int ceil; wall_t wall;} sector_t;
-
-
-// LED
-#define LED_PIN 25
-
-// Keypad pin configurations
-#define BASE_KEYPAD_PIN 9
-#define KEYROWS         4
-#define NUMKEYS         12
 
 
 // Global Variables //
@@ -92,21 +118,23 @@ enum DebouncerState {
 
 // VGA
 char color = WHITE ;
+semaphore_t draw_semaphore ;
 
-// Screen width/height
-#define VGA_WIDTH 640
-#define VGA_HEIGHT 480
+// Rendering
+player_t player;
 
-// Binary Angular Measurement (BAM)
-#define BAM_SIZE 256
-#define DEG_SIZE 360
-#define PI 3.14159265358979323846f
 
+
+// BAM
 uint8_t degree_to_bam[DEG_SIZE];
 
 float sin_lut[BAM_SIZE];
 float cos_lut[BAM_SIZE];
 
+
+// Functions // 
+
+// BAM
 void init_lookup_tables(void) {
 
     // Float degrees -> uint8_t BAM
@@ -141,7 +169,6 @@ float bam_to_angle(uint8_t angle) {
 }
 
 
-// Functions // 
 
 // Initialize Functions
 void init_player(player_t *player) {
@@ -166,7 +193,7 @@ void init_wall(wall_t *wall, float x0, float y0, float x1, float y1) {
 // }
 
 
-
+// Rendering Functions
 wall_t WorldTranslation(player_t player, wall_t wall) {
 
   wall_t TranslatedWall;
@@ -251,9 +278,103 @@ void Render(wall_t wall, float FloorHeight, float CeilHeight) {
   drawLine((short)x[1], (short)yFloor[1], (short)x[1], (short)yCeil[1], WHITE);
 }
 
+// Minimap Functions
+int MiniMapClip(float x, float y) {
+
+    int code = 0;
+
+    if (x < MAP_X) code |= LEFT;
+    else if (x > MAP_X + MAP_WIDTH) code |= RIGHT;
+
+    if (y < MAP_Y) code |= TOP;
+    else if (y > MAP_Y + MAP_HEIGHT) code |= BOTTOM;
+
+    return code;
+}
+
+int ClipLine(int *x0, int *y0, int *x1, int *y1) {
+
+    int code0 = MiniMapClip(*x0, *y0);
+    int code1 = MiniMapClip(*x1, *y1);
+
+    while (1) {
+
+        if (!(code0 | code1)) return 1;
+
+        if (code0 & code1) return 0;
+
+        int codeOut = code0 ? code0 : code1;
+
+        float x, y;
+
+        if (codeOut & TOP) {
+            x = *x0 + (*x1 - *x0) *
+                (MAP_Y - *y0) / (*y1 - *y0);
+            y = MAP_Y;
+        }
+        else if (codeOut & BOTTOM) {
+            x = *x0 + (*x1 - *x0) *
+                (MAP_Y + MAP_HEIGHT - *y0) / (*y1 - *y0);
+            y = MAP_Y + MAP_HEIGHT;
+        }
+        else if (codeOut & RIGHT) {
+            y = *y0 + (*y1 - *y0) *
+                (MAP_X + MAP_WIDTH - *x0) / (*x1 - *x0);
+            x = MAP_X + MAP_WIDTH;
+        }
+        else {
+            y = *y0 + (*y1 - *y0) *
+                (MAP_X - *x0) / (*x1 - *x0);
+            x = MAP_X;
+        }
+
+        if (codeOut == code0) {
+            *x0 = (int)x;
+            *y0 = (int)y;
+            code0 = MiniMapClip(*x0, *y0);
+        }
+        else {
+            *x1 = (int)x;
+            *y1 = (int)y;
+            code1 = MiniMapClip(*x1, *y1);
+        }
+    }
+}
+
+void MiniMap(wall_t wall[], int numWalls) {
+
+  int sx[2], sy[2];
+  wall_t TranslatedWall;
+
+  // Draw walls
+  for (int i = 0; i < numWalls; i++) {
+
+    TranslatedWall = WorldTranslation(player, wall[i]);
+
+    sx[0] = MAP_CENTER_X + TranslatedWall.v1.x * MAP_SCALE;
+    sy[0] = MAP_CENTER_Y - TranslatedWall.v1.y * MAP_SCALE;
+
+    sx[1] = MAP_CENTER_X + TranslatedWall.v2.x * MAP_SCALE;
+    sy[1] = MAP_CENTER_Y - TranslatedWall.v2.y * MAP_SCALE;
+
+    // Clip wall to MiniMap boundary
+    if (ClipLine(&sx[0], &sy[0], &sx[1], &sy[1])) {
+        drawLine(sx[0], sy[0], sx[1], sy[1], WHITE);
+    }
+  }
+
+  // Draw MiniMap boundary
+  drawRect(MAP_X, MAP_Y,
+          MAP_WIDTH, MAP_HEIGHT, WHITE);
+
+  // Draw Player
+  fillCircle(MAP_CENTER_X,
+            MAP_CENTER_Y, 1, RED);
+}
 
 // Protothreads //
 
+wall_t wall[4];
 // Rendering on core 0
 static PT_THREAD (protothread_render(struct pt *pt))
 {
@@ -262,14 +383,13 @@ static PT_THREAD (protothread_render(struct pt *pt))
 
     // Render setup
     wall_t wall[4];
-    wall_t TranslatedWall;
     // See: https://coordinategrid.com/
     // init_wall(&wall[0], 4, 2, 8, 2); // Initialize wall with coordinates
     // init_wall(&wall[1], 8, 2, 8, -2); // Initialize wall with coordinates
     // init_wall(&wall[2], 8, -2, 4, -2); // Initialize wall with coordinates
     // init_wall(&wall[3], 4, -2, 4, 2); // Initialize wall with coordinates
 
-    init_wall(&wall[0], -1, 5, 1, 5); // Initialize wall with coordinates
+    init_wall(&wall[0], -2, 5, 2, 5); // Initialize wall with coordinates
     init_wall(&wall[1], -1, 5, -1, 10); // Initialize wall with coordinates
     init_wall(&wall[2], -1, 10, 1, 10); // Initialize wall with coordinates
     init_wall(&wall[3], 1, 10, 1, 5); // Initialize wall with coordinates
@@ -291,6 +411,8 @@ static PT_THREAD (protothread_render(struct pt *pt))
       PT_YIELD_UNTIL(pt, draw_start_signal()) ;
       // Clear the buffer
       clearLowFrame(0, BLACK);
+      // Tell core 1 to draw as well
+      PT_SEM_SDK_SIGNAL(pt, &draw_semaphore);
 
       for (int i=0; i<sector.NumWalls; i++) {
         float floor =   sector.floor - player.height;
@@ -516,6 +638,24 @@ static PT_THREAD (protothread_serial(struct pt *pt))
     PT_END(pt) ;
 }
 
+
+// ==================================================
+// === Minimap Thread
+// ==================================================
+static PT_THREAD (protothread_minimap(struct pt *pt))
+{
+    PT_BEGIN(pt);
+
+    while (1) {
+        PT_SEM_SDK_WAIT(pt, &draw_semaphore) ;
+
+        MiniMap(wall, 1);
+    }
+
+    PT_END(pt);
+}
+
+
 // ========================================
 // === core 1 main -- started in main below
 // ========================================
@@ -524,6 +664,8 @@ void core1_main(){
   pt_add_thread(protothread_keypad) ;
   // DEBUG PROTOTHREAD
   pt_add_thread(protothread_serial) ;
+  // Minimap protothread
+  pt_add_thread(protothread_minimap);
   // Start the scheduler
   pt_schedule_start ;
 }
@@ -564,6 +706,7 @@ int main(){
 
   init_player(&player);
 
+  sem_init(&draw_semaphore, 0, 1) ;
 
   // start core 1 
   multicore_reset_core1();
