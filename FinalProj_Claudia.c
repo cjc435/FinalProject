@@ -58,7 +58,8 @@ typedef struct {float x[2]; float y[2];} wall_t;
 typedef struct {wall_t wall[4]; int NumWalls; float floor; float celing; } sector_t;
 typedef struct {float x; float y; float height; uint8_t angle;} player_t;
 player_t player;
-
+wall_t wall[4];
+sector_t sector;
 
 // typedef struct {int NumWalls; int floor; int ceil; wall_t wall;} sector_t;
 
@@ -312,7 +313,7 @@ int ClipLine(int *x0, int *y0, int *x1, int *y1) {
         }
     }
 }
-*/
+
 void GuideMap(wall_t wall[], int numWalls) {
 
     int sx[2], sy[2];
@@ -349,7 +350,7 @@ void GuideMap(wall_t wall[], int numWalls) {
 }
 
 // Protothreads
-
+semaphore_t core1startDraw;
 // Rendering on core 0
 static PT_THREAD (protothread_render(struct pt *pt))
 {
@@ -357,7 +358,6 @@ static PT_THREAD (protothread_render(struct pt *pt))
     PT_BEGIN(pt);
 
     // Render setup
-    wall_t wall[4];
     wall_t TranslatedWall;
     // See: https://coordinategrid.com/
     // init_wall(&wall[0], 4, 2, 8, 2); // Initialize wall with coordinates
@@ -372,7 +372,7 @@ static PT_THREAD (protothread_render(struct pt *pt))
 
     // init_wall(&wall[0], 10, 0, 10, 1); // Initialize wall with coordinates
 
-    sector_t sector;
+    // sector_t sector;
     sector.NumWalls = 4;
     sector.floor = 0;
     sector.celing = 1;
@@ -387,6 +387,7 @@ static PT_THREAD (protothread_render(struct pt *pt))
       PT_YIELD_UNTIL(pt, draw_start_signal()) ;
       // Clear the buffer
       clearLowFrame(0, BLACK);
+      PT_SEM_SDK_SIGNAL(pt, &core1startDraw);
 
       for (int i=0; i<sector.NumWalls; i++) {
         // Translate the wall around the player. Returns wall transformations
@@ -411,10 +412,10 @@ static PT_THREAD (protothread_guideMap(struct pt *pt))
     PT_BEGIN(pt);
 
     while (1) {
+        PT_SEM_SDK_WAIT(pt, &core1startDraw);
+        
 
-        PT_YIELD_UNTIL(pt, draw_start_signal());
-
-        GuideMap(wall, sector.NumWalls);
+        GuideMap( wall, sector.NumWalls);
     }
 
     PT_END(pt);
@@ -630,7 +631,7 @@ void core1_main(){
   pt_add_thread(protothread_guideMap);
 
   // DEBUG PROTOTHREAD
-  pt_add_thread(protothread_serial) ;
+  // pt_add_thread(protothread_serial) ;
   // Start the scheduler
   pt_schedule_start ;
 
@@ -672,6 +673,7 @@ int main(){
 
   init_player(&player);
 
+  sem_init(&core1startDraw, 0, 1);
 
   // start core 1 
   multicore_reset_core1();
@@ -679,7 +681,7 @@ int main(){
 
   // add threads
   pt_add_thread(protothread_render);
-
+// pt_add_thread(protothread_guideMap);
   // start scheduler
   pt_schedule_start ;
 } 
