@@ -92,7 +92,8 @@ typedef signed int fix15 ;
 typedef struct {float x; float y;} vector2d_t;
 typedef struct {vector2d_t v1; vector2d_t v2; bool isPortal;} wall_t;
 typedef struct {wall_t wall[8]; int NumWalls; float floor; float celing; } sector_t;
-typedef struct {float x; float y; float height; uint8_t angle;} player_t;
+// typedef struct {float x; float y; float height; uint8_t angle;} player_t;
+typedef struct {float x; float y; float height; float angle;} player_t;
 
 
 // typedef struct {int NumWalls; int floor; int ceil; wall_t wall;} sector_t;
@@ -135,38 +136,38 @@ float cos_lut[BAM_SIZE];
 // Functions // 
 
 // BAM
-void init_lookup_tables(void) {
+// void init_lookup_tables(void) {
 
-    // Float degrees -> uint8_t BAM
-    for (int i = 0; i < DEG_SIZE; i++) {
-        degree_to_bam[i] = (uint8_t)(i * 256.0f / 360.0f);
-    }
+//     // Float degrees -> uint8_t BAM
+//     for (int i = 0; i < DEG_SIZE; i++) {
+//         degree_to_bam[i] = (uint8_t)(i * 256.0f / 360.0f);
+//     }
 
-    // BAM -> float sine/cosine
-    for (int i = 0; i < BAM_SIZE; i++) {
+//     // BAM -> float sine/cosine
+//     for (int i = 0; i < BAM_SIZE; i++) {
 
-        float radians = i * 2.0f * PI / BAM_SIZE;
+//         float radians = i * 2.0f * PI / BAM_SIZE;
 
-        sin_lut[i] = sinf(radians);
-        cos_lut[i] = cosf(radians);
-    }
-}
-uint8_t angle_to_bam(float angle) {
-    // Normalize angle to [0, 360)
-    while (angle < 0.0f)
-        angle += 360.0f;
+//         sin_lut[i] = sinf(radians);
+//         cos_lut[i] = cosf(radians);
+//     }
+// }
+// uint8_t angle_to_bam(float angle) {
+//     // Normalize angle to [0, 360)
+//     while (angle < 0.0f)
+//         angle += 360.0f;
 
-    while (angle >= 360.0f)
-        angle -= 360.0f;
+//     while (angle >= 360.0f)
+//         angle -= 360.0f;
 
-    int index = (int)angle;
+//     int index = (int)angle;
 
-    return degree_to_bam[index];
-}
+//     return degree_to_bam[index];
+// }
 
-float bam_to_angle(uint8_t angle) {
-  return (float)angle * (360.0 / 256.0); 
-}
+// float bam_to_angle(uint8_t angle) {
+//   return (float)angle * (360.0 / 256.0); 
+// }
 
 
 
@@ -206,56 +207,79 @@ wall_t WorldTranslation(player_t player, wall_t wall) {
   TranslatedWall.v2.y = wall.v2.y - player.y;
 
   // Rotate the wall around the player
-  TranslatedWall.v1.x = TranslatedWall.v1.x * cos_lut[player.angle] - TranslatedWall.v1.y * sin_lut[player.angle];
-  TranslatedWall.v1.y = TranslatedWall.v1.x * sin_lut[player.angle] + TranslatedWall.v1.y * cos_lut[player.angle];
+  
+  // float cos = cos_lut[player.angle];
+  // float sin = sin_lut[player.angle];
+  float cos = cosf(player.angle);
+  float sin = sinf(player.angle);
 
-  TranslatedWall.v2.x = TranslatedWall.v2.x * cos_lut[player.angle] - TranslatedWall.v2.y * sin_lut[player.angle];
-  TranslatedWall.v2.y = TranslatedWall.v2.x * sin_lut[player.angle] + TranslatedWall.v2.y * cos_lut[player.angle];
+  // NOTE: The equasion with the + sign determines where 0 degrees is located, i.e. positive x or y axis
+  TranslatedWall.v1.x = TranslatedWall.v1.x * cos + TranslatedWall.v1.y * sin;
+  TranslatedWall.v1.y = TranslatedWall.v1.x * sin - TranslatedWall.v1.y * cos;
+
+  TranslatedWall.v2.x = TranslatedWall.v2.x * cos + TranslatedWall.v2.y * sin;
+  TranslatedWall.v2.y = TranslatedWall.v2.x * sin - TranslatedWall.v2.y * cos;
 
   return TranslatedWall;  
 }
 
-void ConvertHorizontalFovToScreen(int *x) {
-  *x = (int)(*x + ((VGA_WIDTH-1.0)/2.0));
+void ConvertHorizontalFovToScreen(float *x) {
+  *x = (*x + ((VGA_WIDTH-1.0)/2.0));
   return;
 }
 
-void ConvertVerticalFovToScreen(int *y) {
-  *y = (int)((-(*y)) + ((VGA_HEIGHT-1.0)/2.0));
+void ConvertVerticalFovToScreen(float *y) {
+  *y = ((-(*y)) + ((VGA_HEIGHT-1.0)/2.0));
   return;
 }
 
 
 void Render(wall_t wall, float FloorHeight, float CeilHeight) {
-  int x[2];
-  int yFloor[2];
-  int yCeil[2];
+  float x[2];
+  float yFloor[2];
+  float yCeil[2];
 
-  const float d = VGA_WIDTH/2; // See https://sunshine2k.de/articles/algorithm/camperspscreentransform/simplisticcameraperspectivescreentransform.html
+  // The following is in 2D coordinates: x,y
 
   // Translate the wall around the player. Returns wall transformations
   wall = WorldTranslation(player, wall);
 
-  // If the wall is behind the player, ignore completely
-  if(wall.v1.y < 0 && wall.v2.y < 0) {
+  // If the wall is behind the player, ignore it completely
+  if(wall.v1.x < 0 && wall.v2.x < 0) {
     return;
   // If half the wall is behind the player, clip to the respective edge
-  } else if (wall.v1.y < 0) {
+  //  i.e. cut the wall "short" by clipping anything past the player's frustum to that point
+  } else if (wall.v1.x < 0) {
 
-  } else if (wall.v2.y < 0) {
+  } else if (wall.v2.x < 0) {
 
   }
 
 
   // Convert 2D coordinates to player's projection view
-  x[0] = wall.v1.x * d / wall.v1.y;
-  x[1] = wall.v2.x * d / wall.v2.y;
+  //    i.e. following converts 2D coordinates to 3D coordinates
+  //      x -> z
+  //      y -> x
+  //        -> y (introduced at height)
+  //    via the projection equasion: (farther things become smaller)
+  //       x' = x / z
+  //       y' = y / z
+  //
+  //    Note that d represents the distance from the player to the "view plane", or screen.
+  //    See https://sunshine2k.de/articles/algorithm/camperspscreentransform/simplisticcameraperspectivescreentransform.html
+  //    d is calculated assuming a 90 degree FOV (field of view), which simplifies d to 1. 
+  //    The calculation then reduces to jsut being half the screen width
 
-  yFloor[0] = FloorHeight * d / wall.v1.y;
-  yFloor[1] = FloorHeight * d / wall.v2.y;
+  const float d = VGA_WIDTH/2; 
 
-  yCeil[0] = CeilHeight * d / wall.v2.y;
-  yCeil[1] = CeilHeight * d / wall.v2.y;
+  x[0] = wall.v1.y * d / wall.v1.x;
+  x[1] = wall.v2.y * d / wall.v2.x;
+
+  yFloor[0] = FloorHeight * d / wall.v1.x;
+  yFloor[1] = FloorHeight * d / wall.v2.x;
+
+  yCeil[0] = CeilHeight * d / wall.v2.x;
+  yCeil[1] = CeilHeight * d / wall.v2.x;
 
   // Convert new 3D coordinates to 2D screen coordinates
   // Screen goes from 0 -> 640 in x and 0 -> 480 in y
@@ -389,7 +413,7 @@ static PT_THREAD (protothread_render(struct pt *pt))
     // init_wall(&wall[2], 8, -2, 4, -2); // Initialize wall with coordinates
     // init_wall(&wall[3], 4, -2, 4, 2); // Initialize wall with coordinates
 
-    init_wall(&wall[0], -2, 5, 2, 5); // Initialize wall with coordinates
+    init_wall(&wall[0], 6, 4, 6, -4); // Initialize wall with coordinates
     init_wall(&wall[1], -1, 5, -1, 10); // Initialize wall with coordinates
     init_wall(&wall[2], -1, 10, 1, 10); // Initialize wall with coordinates
     init_wall(&wall[3], 1, 10, 1, 5); // Initialize wall with coordinates
@@ -423,7 +447,8 @@ static PT_THREAD (protothread_render(struct pt *pt))
       }
 
       static char AngleStr[32];
-      snprintf(AngleStr, sizeof(int), "%d", (int)bam_to_angle(player.angle));        
+      // snprintf(AngleStr, sizeof(int), "%d", (int)bam_to_angle(player.angle));        
+      snprintf(AngleStr, sizeof(int), "%d", (int) (player.angle * 180.0/M_PI));        
       drawTextGLCD(10, 10, "Angle:", WHITE, BLACK);
       drawTextGLCD(10, 20, AngleStr, WHITE, BLACK);
 
@@ -514,26 +539,34 @@ static PT_THREAD (protothread_keypad(struct pt *pt))
         switch (CurrentKeyPressed) {
             // Forward
             case 2:
-              player.x += sin_lut[player.angle] * movement;
-              player.y += cos_lut[player.angle] * movement;
+            //   player.x += cos_lut[player.angle] * movement;
+            //   player.y += sin_lut[player.angle] * movement;
+              player.x += cosf(player.angle) * movement;
+              player.y += sinf(player.angle) * movement;
               break;
 
             // Backward
             case 5:
-              player.x -= sin_lut[player.angle] * movement;
-              player.y -= cos_lut[player.angle] * movement;
+            //   player.x -= cos_lut[player.angle] * movement;
+            //   player.y -= sin_lut[player.angle] * movement;
+              player.x -= cosf(player.angle) * movement;
+              player.y -= sinf(player.angle) * movement;
               break;
 
             // Strafe Left
             case 4:
-              player.x -= cos_lut[player.angle] * movement;
-              player.y += sin_lut[player.angle] * movement;
+            //   player.x -= sin_lut[player.angle] * movement;
+            //   player.y += cos_lut[player.angle] * movement;
+              player.x -= sinf(player.angle) * movement;
+              player.y += cosf(player.angle) * movement;
               break;
 
             // Strafe Right
             case 6:
-              player.x += cos_lut[player.angle] * movement;
-              player.y -= sin_lut[player.angle] * movement;
+            //   player.x += sin_lut[player.angle] * movement;
+            //   player.y -= cos_lut[player.angle] * movement;
+              player.x += sinf(player.angle) * movement;
+              player.y -= cosf(player.angle) * movement;
               break;
 
             // Fly Up
@@ -548,18 +581,23 @@ static PT_THREAD (protothread_keypad(struct pt *pt))
 
             // Rotate Left  
             case 1:
-              player.angle -= 5;
+              // player.angle -= 5;
+              player.angle += 0.0872665;
               break;
 
             // Rotate Right
             case 3:
-              player.angle += 5;
+              // player.angle += 5;
+              player.angle -= 0.0872665;
               break;
 
             default:
               break;
         }
 
+        
+        // if(player.angle > 2*M_PI) {player.angle -= 2*M_PI;}
+        // else if(player.angle < 2*M_PI) {player.angle += 2*M_PI;}
 
       PT_YIELD_usec(100000) ;    //30000
     }
@@ -586,54 +624,62 @@ static PT_THREAD (protothread_serial(struct pt *pt))
         // convert input string to number
         sscanf(pt_serial_in_buffer,"%c", &classifier) ;
 
-        switch (classifier) {
-            // Forward
-            case 'w':
-              player.x += sin_lut[player.angle] * movement;
-              player.y += cos_lut[player.angle] * movement;
-              break;
+        // switch (classifier) {
+            // // Forward
+            // case 'w':
+            // //   player.x += cos_lut[player.angle] * movement;
+            // //   player.y += sin_lut[player.angle] * movement;
+            //   player.x += cosf(player.angle) * movement;
+            //   player.y += sinf(player.angle) * movement;
+            //   break;
 
-            // Backward
-            case 's':
-              player.x -= sin_lut[player.angle] * movement;
-              player.y -= cos_lut[player.angle] * movement;
-              break;
+            // // Backward
+            // case 'a':
+            // //   player.x -= cos_lut[player.angle] * movement;
+            // //   player.y -= sin_lut[player.angle] * movement;
+            //   player.x -= cosf(player.angle) * movement;
+            //   player.y -= sinf(player.angle) * movement;
+            //   break;
 
-            // Strafe Left
-            case 'a':
-              player.x -= cos_lut[player.angle] * movement;
-              player.y += sin_lut[player.angle] * movement;
-              break;
+            // // Strafe Left
+            // case 's':
+            // //   player.x -= sin_lut[player.angle] * movement;
+            // //   player.y += cos_lut[player.angle] * movement;
+            //   player.x -= sinf(player.angle) * movement;
+            //   player.y += cosf(player.angle) * movement;
+            //   break;
 
-            // Strafe Right
-            case 'd':
-              player.x += cos_lut[player.angle] * movement;
-              player.y -= sin_lut[player.angle] * movement;
-              break;
+            // // Strafe Right
+            // case 'd':
+            // //   player.x += sin_lut[player.angle] * movement;
+            // //   player.y -= cos_lut[player.angle] * movement;
+            //   player.x += sinf(player.angle) * movement;
+            //   player.y -= cosf(player.angle) * movement;
+            //   break;
 
-            // Fly Up
-            case 'z':
-              player.height += movement;
-              break;
+        //     // Fly Up
+        //     case 'z':
+        //       player.height += movement;
+        //       break;
 
-            // Fly Down
-            case 'x':
-              player.height -= movement;
-              break;
+        //     // Fly Down
+        //     case 'x':
+        //       player.height -= movement;
+        //       break;
 
-            // Rotate Left  
-            case 'q':
-              player.angle -= 1;
-              break;
+        //     // Rotate Left  
+        //     case 'q':
+        //       player.angle -= 1;
+        //       break;
 
-            // Rotate Right
-            case 'e':
-              player.angle += 1;
-              break;
+        //     // Rotate Right
+        //     case 'e':
+        //       player.angle += 1;
+        //       break;
 
-            default:
-              break;
-        }
+        //     default:
+        //       break;
+        // }
     }
     PT_END(pt) ;
 }
@@ -702,7 +748,7 @@ int main(){
   gpio_pull_up((BASE_KEYPAD_PIN+5)) ;
   gpio_pull_up((BASE_KEYPAD_PIN+6)) ;
 
-  init_lookup_tables();
+  // init_lookup_tables();
 
   init_player(&player);
 
