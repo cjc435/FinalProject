@@ -195,16 +195,16 @@ void init_wall(wall_t *wall, float x0, float y0, float x1, float y1) {
 
 
 // Rendering Functions
-wall_t WorldTranslation(player_t player, wall_t wall) {
+wall_t TransformWallAroundPlayer(player_t player, wall_t wall) {
 
   wall_t TranslatedWall;
   
   // Move the wall around the player
-  TranslatedWall.v1.x = wall.v1.x - player.x;
-  TranslatedWall.v1.y = wall.v1.y - player.y;
+  float dx1 = wall.v1.x - player.x;
+  float dy1 = wall.v1.y - player.y;
 
-  TranslatedWall.v2.x = wall.v2.x - player.x;
-  TranslatedWall.v2.y = wall.v2.y - player.y;
+  float dx2 = wall.v2.x - player.x;
+  float dy2 = wall.v2.y - player.y;
 
   // Rotate the wall around the player
   
@@ -214,13 +214,19 @@ wall_t WorldTranslation(player_t player, wall_t wall) {
   float sin = sinf(player.angle);
 
   // NOTE: The equasion with the + sign determines where 0 degrees is located, i.e. positive x or y axis
-  TranslatedWall.v1.x = TranslatedWall.v1.x * cos + TranslatedWall.v1.y * sin;
-  TranslatedWall.v1.y = TranslatedWall.v1.x * sin - TranslatedWall.v1.y * cos;
+  TranslatedWall.v1.x = dx1 * cos + dy1 * sin;
+  TranslatedWall.v1.y = dx1 * sin - dy1 * cos;
 
-  TranslatedWall.v2.x = TranslatedWall.v2.x * cos + TranslatedWall.v2.y * sin;
-  TranslatedWall.v2.y = TranslatedWall.v2.x * sin - TranslatedWall.v2.y * cos;
+  TranslatedWall.v2.x = dx2 * cos + dy2 * sin;
+  TranslatedWall.v2.y = dx2 * sin - dy2 * cos;
 
   return TranslatedWall;  
+}
+
+vector2d_t function(vector2d_t v1, vector2d_t v2) {
+
+
+
 }
 
 void ConvertHorizontalFovToScreen(float *x) {
@@ -233,73 +239,111 @@ void ConvertVerticalFovToScreen(float *y) {
   return;
 }
 
-
 void Render(wall_t wall, float FloorHeight, float CeilHeight) {
-  float x[2];
-  float yFloor[2];
-  float yCeil[2];
-
-  // The following is in 2D coordinates: x,y
-
-  // Translate the wall around the player. Returns wall transformations
-  wall = WorldTranslation(player, wall);
-
-  // If the wall is behind the player, ignore it completely
-  if(wall.v1.x < 0 && wall.v2.x < 0) {
-    return;
-  // If half the wall is behind the player, clip to the respective edge
-  //  i.e. cut the wall "short" by clipping anything past the player's frustum to that point
-  } else if (wall.v1.x < 0) {
-
-  } else if (wall.v2.x < 0) {
-
-  }
 
 
-  // Convert 2D coordinates to player's projection view
-  //    i.e. following converts 2D coordinates to 3D coordinates
-  //      x -> z
-  //      y -> x
-  //        -> y (introduced at height)
-  //    via the projection equasion: (farther things become smaller)
-  //       x' = x / z
-  //       y' = y / z
-  //
-  //    Note that d represents the distance from the player to the "view plane", or screen.
-  //    See https://sunshine2k.de/articles/algorithm/camperspscreentransform/simplisticcameraperspectivescreentransform.html
-  //    d is calculated assuming a 90 degree FOV (field of view), which simplifies d to 1. 
-  //    The calculation then reduces to jsut being half the screen width
+  /*
+    STEPS:
+      Sectors
+        Find current player's sector
+            Keep track, only check for changes
+        Organize sectors from farthest to closest
+            Sectors in the player's current sector go last, so outside, current, inside
+        Loop through the sectors from closest to farthest
 
-  const float d = VGA_WIDTH/2; 
+      Walls
+          From that loop, start rendering the walls
+              Apply world translation to center around the player
+              Apply clipping against the view frustum
+              Use projection to convert 2D -> 3D
+              Convert a 3D projection -> screen space
+              Use linear interpolation to draw each column of the wall
+  */
 
-  x[0] = wall.v1.y * d / wall.v1.x;
-  x[1] = wall.v2.y * d / wall.v2.x;
+  /*
+    List of fncs
+      FindCurrentSector()
+      SortSectorsByDistance() (closest -> farthest)
+      - loop by sectors -
+        SortWallsByDistance() (closest -> farthest)
+        - loop by walls -
+          TransformWallAroundPlayer()
+          FrustumClip()
+          ProjectTo3DSpace()
+          ConvertToScreenSpace()
+          DrawWallColumns()
+  */
 
-  yFloor[0] = FloorHeight * d / wall.v1.x;
-  yFloor[1] = FloorHeight * d / wall.v2.x;
+  // for(int i=0; i<numWalls; i++) {  }
+    // wall_t CurrentWall = wall[i]
+    // wall_t CurrentWall = wall;
+    
+    // The following is in 2D coordinates: x,y
 
-  yCeil[0] = CeilHeight * d / wall.v2.x;
-  yCeil[1] = CeilHeight * d / wall.v2.x;
+    // Translate the wall around the player. Includes shifting and rotation
+    wall = TransformWallAroundPlayer(player, wall);
 
-  // Convert new 3D coordinates to 2D screen coordinates
-  // Screen goes from 0 -> 640 in x and 0 -> 480 in y
+    // Clipping: 
+    // If the wall is behind the player, ignore it completely
+    if(wall.v1.x < 0 && wall.v2.x < 0) {return;} 
+    // If half the wall is behind the player, clip to the respective edge
+    // i.e. cut the wall "short" by clipping anything past the player's frustum to that point
+    // If the point is over the line y = x (positive of view frustum)
+    if (wall.v1.x < 0 || wall.v2.x < 0) {
+      return;
+    }
+    
 
-  ConvertHorizontalFovToScreen  (&x[0]);
-  ConvertHorizontalFovToScreen  (&x[1]);
-  ConvertVerticalFovToScreen    (&yFloor[0]);
-  ConvertVerticalFovToScreen    (&yFloor[1]);
-  ConvertVerticalFovToScreen    (&yCeil[0]);
-  ConvertVerticalFovToScreen    (&yCeil[1]);
+    // Convert 2D coordinates to player's projection view
+    //    i.e. following converts 2D coordinates to 3D coordinates
+    //      x -> z
+    //      y -> x
+    //        -> y (introduced as floor / ceiling)
+    //    via the projection equasion: (farther things become smaller)
+    //       x' = x / z
+    //       y' = y / z
+    //
+    //    Note that d represents the distance from the player to the "view plane", or screen.
+    //    See https://sunshine2k.de/articles/algorithm/camperspscreentransform/simplisticcameraperspectivescreentransform.html
+    //    d is calculated assuming a 90 degree FOV (field of view), which simplifies d to 1. 
+    //    The calculation then reduces to jsut being half the screen width
 
-  // drawPixel((short)x[0], (short)yFloor[0], WHITE);
-  // drawPixel((short)x[0], (short)yCeil[0], WHITE);
-  // drawPixel((short)x[1], (short)yFloor[1], WHITE);
-  // drawPixel((short)x[1], (short)yCeil[1], WHITE);
+    // ProjectTo3DSpace();
 
-  drawLine((short)x[0], (short)yFloor[0], (short)x[1], (short)yFloor[1], WHITE);
-  drawLine((short)x[0], (short)yCeil[0], (short)x[1], (short)yCeil[1], WHITE);
-  drawLine((short)x[0], (short)yFloor[0], (short)x[0], (short)yCeil[0], WHITE);
-  drawLine((short)x[1], (short)yFloor[1], (short)x[1], (short)yCeil[1], WHITE);
+    float x[2];
+    float yFloor[2];
+    float yCeil[2];
+
+    const float d = VGA_WIDTH/2; 
+
+    x[0] = wall.v1.y * d / wall.v1.x;
+    x[1] = wall.v2.y * d / wall.v2.x;
+
+    yFloor[0] = FloorHeight * d / wall.v1.x;
+    yFloor[1] = FloorHeight * d / wall.v2.x;
+
+    yCeil[0] = CeilHeight * d / wall.v2.x;
+    yCeil[1] = CeilHeight * d / wall.v2.x;
+
+    // Convert new 3D coordinates to 2D screen coordinates
+    // Screen goes from 0 -> 640 in x and 0 -> 480 in y
+
+    ConvertHorizontalFovToScreen  (&x[0]);
+    ConvertHorizontalFovToScreen  (&x[1]);
+    ConvertVerticalFovToScreen    (&yFloor[0]);
+    ConvertVerticalFovToScreen    (&yFloor[1]);
+    ConvertVerticalFovToScreen    (&yCeil[0]);
+    ConvertVerticalFovToScreen    (&yCeil[1]);
+
+    // drawPixel((short)x[0], (short)yFloor[0], WHITE);
+    // drawPixel((short)x[0], (short)yCeil[0], WHITE);
+    // drawPixel((short)x[1], (short)yFloor[1], WHITE);
+    // drawPixel((short)x[1], (short)yCeil[1], WHITE);
+
+    drawLine((short)x[0], (short)yFloor[0], (short)x[1], (short)yFloor[1], WHITE);
+    drawLine((short)x[0], (short)yCeil[0], (short)x[1], (short)yCeil[1], WHITE);
+    drawLine((short)x[0], (short)yFloor[0], (short)x[0], (short)yCeil[0], WHITE);
+    drawLine((short)x[1], (short)yFloor[1], (short)x[1], (short)yCeil[1], WHITE);
 }
 
 // Minimap Functions
@@ -373,7 +417,7 @@ void MiniMap(wall_t wall[], int numWalls) {
   // Draw walls
   for (int i = 0; i < numWalls; i++) {
 
-    TranslatedWall = WorldTranslation(player, wall[i]);
+    TranslatedWall = TransformWallAroundPlayer(player, wall[i]);
 
     sx[0] = MAP_CENTER_X + TranslatedWall.v1.x * MAP_SCALE;
     sy[0] = MAP_CENTER_Y - TranslatedWall.v1.y * MAP_SCALE;
