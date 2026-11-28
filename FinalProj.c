@@ -222,14 +222,17 @@ wall_t TransformWallAroundPlayer(player_t player, wall_t wall) {
   return TranslatedWall;  
 }
 
-void ConvertHorizontalFovToScreen(float *x) {
-  *x = (*x + ((VGA_WIDTH-1.0)/2.0));
-  return;
+float clamp(float in, float min, float max) {
+  float out = in < min ? min : in;
+  return out > max ? max : out;
 }
 
-void ConvertVerticalFovToScreen(float *y) {
-  *y = ((-(*y)) + ((VGA_HEIGHT-1.0)/2.0));
-  return;
+float ConvertHorizontalFovToScreen(float x) {
+  return (x + ((VGA_WIDTH-1.0)/2.0));
+}
+
+float ConvertVerticalFovToScreen(float y) {
+  return ((-y) + ((VGA_HEIGHT-1.0)/2.0));
 }
 
 
@@ -287,15 +290,26 @@ void Render(wall_t wall, float FloorHeight, float CeilHeight) {
     wall = TransformWallAroundPlayer(player, wall);
 
     // Clipping: 
+    const float NEAR = 0.1f;
     // If the wall is behind the player, ignore it completely
-    if(wall.v1.x < 0 && wall.v2.x < 0) {return;} 
+    if(wall.v1.x < NEAR && wall.v2.x < NEAR) {return;} 
     // If half the wall is behind the player, clip to the respective edge
     // i.e. cut the wall "short" by clipping anything past the player's frustum to that point
     // If the point is over the line y = x (positive of view frustum)
-    if (wall.v1.x < 0 || wall.v2.x < 0) {
-      return;
+    // if (wall.v1.x < 0 || wall.v2.x < 0) {
+    //   return;
+    // }
+
+    // One endpoint behind the near plane: slide it along the wall to x = NEAR
+    if (wall.v1.x < NEAR) {
+        float t = (NEAR - wall.v1.x) / (wall.v2.x - wall.v1.x);
+        wall.v1.y += t * (wall.v2.y - wall.v1.y);
+        wall.v1.x  = NEAR;
+    } else if (wall.v2.x < NEAR) {
+        float t = (NEAR - wall.v2.x) / (wall.v1.x - wall.v2.x);
+        wall.v2.y += t * (wall.v1.y - wall.v2.y);
+        wall.v2.x  = NEAR;
     }
-    
 
     // Convert 2D coordinates to player's projection view
     //    i.e. following converts 2D coordinates to 3D coordinates
@@ -324,35 +338,52 @@ void Render(wall_t wall, float FloorHeight, float CeilHeight) {
     float yf0 = FloorHeight * d / wall.v1.x;
     float yf1 = FloorHeight * d / wall.v2.x;
 
-    float yc0 = CeilHeight * d / wall.v2.x;
+    float yc0 = CeilHeight * d / wall.v1.x;
     float yc1 = CeilHeight * d / wall.v2.x;
 
-    ConvertHorizontalFovToScreen  (&x0);
-    ConvertHorizontalFovToScreen  (&x1);
-    ConvertVerticalFovToScreen    (&yf0);
-    ConvertVerticalFovToScreen    (&yf1);
-    ConvertVerticalFovToScreen    (&yc0);
-    ConvertVerticalFovToScreen    (&yc1);
+    float Screen_x0 =  ConvertHorizontalFovToScreen  (x0);
+    float Screen_x1 =  ConvertHorizontalFovToScreen  (x1);
+    float Screen_yf0 = ConvertVerticalFovToScreen    (yf0);
+    float Screen_yf1 = ConvertVerticalFovToScreen    (yf1);
+    float Screen_yc0 = ConvertVerticalFovToScreen    (yc0);
+    float Screen_yc1 = ConvertVerticalFovToScreen    (yc1);
+  
+    // Back-facing
+    if(Screen_x1 <= Screen_x0) return;
+    // Entirely off one side of the screen
+    if (Screen_x1 < 0 || Screen_x0 >= VGA_WIDTH) return;
 
-    // WIP
-    // if((int)x0 == (int)x1 || x1 < x0) {return;}
-    // float stepf = (yf1 - yf0) / (x1 - x0);
-    // float stepc = (yc1 - yc0) / (x1 - x0);
-    // float yf = yf0;
-    // float yc = yc0;
+    float stepf = (Screen_yf1 - Screen_yf0) / (Screen_x1 - Screen_x0);
+    float stepc = (Screen_yc1 - Screen_yc0) / (Screen_x1 - Screen_x0);
+        
+    // Clamp the column range in float space BEFORE casting
+    float fxs = ceilf(Screen_x0);   if (fxs < 0)              fxs = 0;
+    float fxe = floorf(Screen_x1);  if (fxe > VGA_WIDTH - 1)  fxe = VGA_WIDTH - 1;
+    if (fxs > fxe) return;
+    short xs = (short)fxs;
+    short xe = (short)fxe;
 
-    // for (int ScreenColumn = x0; ScreenColumn <= x1; ScreenColumn++) {  
-    //     if(yf < yc) {continue;}
-    //     short height = (short)(yf-yc); 
-    //     drawVLine((short)ScreenColumn, (short)yc, height, WHITE) ;
-    //     yf += stepf;
-    //     yc += stepc;
-    // }
+    // Start the heights at the first drawn column, measured from the unclamped endpoint
+    float yf = Screen_yf0 + (fxs - Screen_x0) * stepf;
+    float yc = Screen_yc0 + (fxs - Screen_x0) * stepc;
 
-    drawLine((short)x0, (short)yf0, (short)x1, (short)yf1, WHITE);
-    drawLine((short)x0, (short)yc0, (short)x1, (short)yc1, WHITE);
-    drawLine((short)x0, (short)yf0, (short)x0, (short)yc0, WHITE);
-    drawLine((short)x1, (short)yf1, (short)x1, (short)yc1, WHITE);
+    for (short ScreenColumn = xs; ScreenColumn <= xe; ScreenColumn++) {  
+        float top    = clamp(yc, 0, VGA_HEIGHT - 1);
+        float bottom = clamp(yf, 0, VGA_HEIGHT - 1);
+        // Remember VGA Y values are flipped, so 0 is the top and HEIGHT is the bottom of the screen
+        if (bottom > top) {
+            drawVLine(ScreenColumn, (short)top, (short)(bottom - top), WHITE);
+        }
+        // short height = (short)(yf-yc); 
+        // drawVLine(ScreenColumn, (short)yc, height, WHITE) ;
+        yf += stepf;
+        yc += stepc;
+    }
+
+    // drawLine((short)Screen_x0, (short)Screen_yf0, (short)Screen_x1, (short)Screen_yf1, WHITE);
+    // drawLine((short)Screen_x0, (short)Screen_yc0, (short)Screen_x1, (short)Screen_yc1, WHITE);
+    // drawLine((short)Screen_x0, (short)Screen_yf0, (short)Screen_x0, (short)Screen_yc0, WHITE);
+    // drawLine((short)Screen_x1, (short)Screen_yf1, (short)Screen_x1, (short)Screen_yc1, WHITE);
 }
 
 // Minimap Functions
@@ -510,9 +541,6 @@ static PT_THREAD (protothread_render(struct pt *pt))
   PT_END(pt);
 } // animation thread
 
-
-
-
 // ==================================================
 // === Keypad thread 
 // ==================================================
@@ -529,6 +557,9 @@ static PT_THREAD (protothread_keypad(struct pt *pt))
     // State Machine Variables
     static enum DebouncerState DebounceState = NotPressed;
     static int PotentialKeypress = -1;
+
+    static const float TWO_PI    = 2.0f*M_PI;
+    static const float FIVE_DEGREES = 0.0872665f;      // 5 degrees
 
     while(1) {
 
@@ -635,13 +666,15 @@ static PT_THREAD (protothread_keypad(struct pt *pt))
             // Rotate Left  
             case 1:
               // player.angle -= 5;
-              player.angle += 0.0872665;
+              player.angle += FIVE_DEGREES;
+              if (player.angle >= TWO_PI) player.angle -= TWO_PI;
               break;
 
             // Rotate Right
             case 3:
               // player.angle += 5;
-              player.angle -= 0.0872665;
+              player.angle -= FIVE_DEGREES;
+              if (player.angle < 0.0f) player.angle += TWO_PI;
               break;
 
             default:
