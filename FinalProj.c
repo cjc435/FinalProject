@@ -335,13 +335,19 @@ void Render(wall_t wall, float FloorHeight, float CeilHeight) {
     ConvertVerticalFovToScreen    (&yc1);
 
     // WIP
-    // for(short ScreenColumn = x0; ScreenColumn < x1; ScreenColumn++) {
-    //   short yf = lerp(x0, yf0, x1, yf1, ScreenColumn);
-    //   short yc = lerp(x0, yc0, x1, yc1, ScreenColumn);
-    //   short height = yf-yc;
-    //   drawVLine(ScreenColumn, yc, height, WHITE) ;
-    // }
+    // if((int)x0 == (int)x1 || x1 < x0) {return;}
+    // float stepf = (yf1 - yf0) / (x1 - x0);
+    // float stepc = (yc1 - yc0) / (x1 - x0);
+    // float yf = yf0;
+    // float yc = yc0;
 
+    // for (int ScreenColumn = x0; ScreenColumn <= x1; ScreenColumn++) {  
+    //     if(yf < yc) {continue;}
+    //     short height = (short)(yf-yc); 
+    //     drawVLine((short)ScreenColumn, (short)yc, height, WHITE) ;
+    //     yf += stepf;
+    //     yc += stepc;
+    // }
 
     drawLine((short)x0, (short)yf0, (short)x1, (short)yf1, WHITE);
     drawLine((short)x0, (short)yc0, (short)x1, (short)yc1, WHITE);
