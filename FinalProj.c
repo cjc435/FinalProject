@@ -207,7 +207,6 @@ wall_t TransformWallAroundPlayer(player_t player, wall_t wall) {
   float dy2 = wall.v2.y - player.y;
 
   // Rotate the wall around the player
-  
   // float cos = cos_lut[player.angle];
   // float sin = sin_lut[player.angle];
   float cos = cosf(player.angle);
@@ -223,12 +222,6 @@ wall_t TransformWallAroundPlayer(player_t player, wall_t wall) {
   return TranslatedWall;  
 }
 
-vector2d_t function(vector2d_t v1, vector2d_t v2) {
-
-
-
-}
-
 void ConvertHorizontalFovToScreen(float *x) {
   *x = (*x + ((VGA_WIDTH-1.0)/2.0));
   return;
@@ -237,6 +230,16 @@ void ConvertHorizontalFovToScreen(float *x) {
 void ConvertVerticalFovToScreen(float *y) {
   *y = ((-(*y)) + ((VGA_HEIGHT-1.0)/2.0));
   return;
+}
+
+
+/* Linearly interpolate y at x, given two known points (x0, y0) and (x1, y1). */
+short lerp(short x0, short y0, short x1, short y1, short x)
+{
+    if (x1 == x0)
+        return y0;  /* avoid division by zero for a vertical line */
+
+    return y0 + (y1 - y0) * (x - x0) / (x1 - x0);
 }
 
 void Render(wall_t wall, float FloorHeight, float CeilHeight) {
@@ -310,40 +313,40 @@ void Render(wall_t wall, float FloorHeight, float CeilHeight) {
 
     // ProjectTo3DSpace();
 
-    float x[2];
-    float yFloor[2];
-    float yCeil[2];
-
-    const float d = VGA_WIDTH/2; 
-
-    x[0] = wall.v1.y * d / wall.v1.x;
-    x[1] = wall.v2.y * d / wall.v2.x;
-
-    yFloor[0] = FloorHeight * d / wall.v1.x;
-    yFloor[1] = FloorHeight * d / wall.v2.x;
-
-    yCeil[0] = CeilHeight * d / wall.v2.x;
-    yCeil[1] = CeilHeight * d / wall.v2.x;
-
     // Convert new 3D coordinates to 2D screen coordinates
     // Screen goes from 0 -> 640 in x and 0 -> 480 in y
 
-    ConvertHorizontalFovToScreen  (&x[0]);
-    ConvertHorizontalFovToScreen  (&x[1]);
-    ConvertVerticalFovToScreen    (&yFloor[0]);
-    ConvertVerticalFovToScreen    (&yFloor[1]);
-    ConvertVerticalFovToScreen    (&yCeil[0]);
-    ConvertVerticalFovToScreen    (&yCeil[1]);
+    const float d = VGA_WIDTH/2; 
 
-    // drawPixel((short)x[0], (short)yFloor[0], WHITE);
-    // drawPixel((short)x[0], (short)yCeil[0], WHITE);
-    // drawPixel((short)x[1], (short)yFloor[1], WHITE);
-    // drawPixel((short)x[1], (short)yCeil[1], WHITE);
+    float x0 = wall.v1.y * d / wall.v1.x;
+    float x1 = wall.v2.y * d / wall.v2.x;
 
-    drawLine((short)x[0], (short)yFloor[0], (short)x[1], (short)yFloor[1], WHITE);
-    drawLine((short)x[0], (short)yCeil[0], (short)x[1], (short)yCeil[1], WHITE);
-    drawLine((short)x[0], (short)yFloor[0], (short)x[0], (short)yCeil[0], WHITE);
-    drawLine((short)x[1], (short)yFloor[1], (short)x[1], (short)yCeil[1], WHITE);
+    float yf0 = FloorHeight * d / wall.v1.x;
+    float yf1 = FloorHeight * d / wall.v2.x;
+
+    float yc0 = CeilHeight * d / wall.v2.x;
+    float yc1 = CeilHeight * d / wall.v2.x;
+
+    ConvertHorizontalFovToScreen  (&x0);
+    ConvertHorizontalFovToScreen  (&x1);
+    ConvertVerticalFovToScreen    (&yf0);
+    ConvertVerticalFovToScreen    (&yf1);
+    ConvertVerticalFovToScreen    (&yc0);
+    ConvertVerticalFovToScreen    (&yc1);
+
+    // WIP
+    // for(short ScreenColumn = x0; ScreenColumn < x1; ScreenColumn++) {
+    //   short yf = lerp(x0, yf0, x1, yf1, ScreenColumn);
+    //   short yc = lerp(x0, yc0, x1, yc1, ScreenColumn);
+    //   short height = yf-yc;
+    //   drawVLine(ScreenColumn, yc, height, WHITE) ;
+    // }
+
+
+    drawLine((short)x0, (short)yf0, (short)x1, (short)yf1, WHITE);
+    drawLine((short)x0, (short)yc0, (short)x1, (short)yc1, WHITE);
+    drawLine((short)x0, (short)yf0, (short)x0, (short)yc0, WHITE);
+    drawLine((short)x1, (short)yf1, (short)x1, (short)yc1, WHITE);
 }
 
 // Minimap Functions
